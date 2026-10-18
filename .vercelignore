@@ -1,0 +1,7 @@
+# 계정·세션·사진 원본은 공개 파일로 올리지 않습니다. 서버 자료는 Redis/Blob에 따로 넣어요(tools/vercel_seed.py).
+server-data/
+.env
+.env.*
+tests/
+**/__pycache__/
+*.py[cod]

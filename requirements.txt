@@ -1,0 +1,3 @@
+# Vercel(api/index.py)용 패키지입니다. 로컬 server.py는 requirements-vision.txt를 씁니다.
+# 코드가 쓰는 cv2.aruco.ArucoDetector는 기본 OpenCV에 들어 있어 contrib보다 가벼운 headless판을 씁니다.
+opencv-python-headless==5.0.0.93

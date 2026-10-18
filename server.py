@@ -278,6 +278,15 @@ def get_product_thumbnail_bytes(garments_dir, garment_id):
 
 def create_server(host='0.0.0.0', port=8000, data_dir=DEFAULT_DATA_DIR):
     """Create a testable HTTP server; tests can pass a temporary data directory."""
+    handler_class = create_handler_class(data_dir)
+    httpd = ThreadingHTTPServer((host, port), handler_class)
+    httpd.garment_metadata_lock = handler_class.garment_metadata_lock
+    httpd.product_generation_locks = handler_class.product_generation_locks
+    return httpd
+
+
+def create_handler_class(data_dir=DEFAULT_DATA_DIR):
+    """Build the request handler; Vercel (api/index.py) uses it without starting a server."""
     storage = Path(data_dir).resolve()
     storage.mkdir(parents=True, exist_ok=True)
     lock = threading.Lock()
@@ -1413,10 +1422,9 @@ def create_server(host='0.0.0.0', port=8000, data_dir=DEFAULT_DATA_DIR):
                 write_json_safely(experiments_dir / run_id / 'metadata.json', item)
             return self.send_json(200, {'id': run_id, 'round': item['round'], 'completed': True})
 
-    httpd = ThreadingHTTPServer((host, port), FitShareHandler)
-    httpd.garment_metadata_lock = lock
-    httpd.product_generation_locks = product_generation_locks
-    return httpd
+    FitShareHandler.garment_metadata_lock = lock
+    FitShareHandler.product_generation_locks = product_generation_locks
+    return FitShareHandler
 
 
 def valid_measurement(value):

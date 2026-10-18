@@ -1,6 +1,7 @@
 """YOLO → GrabCut for measurement; YOLO → SAM for product photo cutouts."""
 
 import hashlib
+import os
 import threading
 import urllib.request
 from pathlib import Path
@@ -11,7 +12,9 @@ import numpy as np
 
 MODEL_SHA256 = '485bc106721febbd82fe24297e12a9fb49a435a552afff1e6b76308716555f76'
 MODEL_URL = 'https://huggingface.co/HasanKabir23/Yolov26s-DeepFashion2/resolve/main/best.onnx'
-MODEL_PATH = Path(__file__).resolve().parents[1] / 'server-data' / 'model-cache' / 'deepfashion2-yolo26s-seg.onnx'
+# Vercel은 코드 폴더에 쓸 수 없어서 FITSHARE_MODEL_DIR(/tmp)로 모델 저장 위치를 바꿉니다.
+MODEL_DIR = Path(os.environ.get('FITSHARE_MODEL_DIR') or Path(__file__).resolve().parents[1] / 'server-data' / 'model-cache')
+MODEL_PATH = MODEL_DIR / 'deepfashion2-yolo26s-seg.onnx'
 CLASS_NAMES = {
     0: 'short_sleeve_top', 1: 'long_sleeve_top', 2: 'short_sleeve_outwear',
     3: 'long_sleeve_outwear', 4: 'vest', 5: 'sling', 6: 'shorts', 7: 'trousers',
