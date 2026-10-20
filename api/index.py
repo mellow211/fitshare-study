@@ -1,4 +1,4 @@
-"""Vercel entry point: runs the same FitShareHandler as server.py, with server-data kept in Redis/Blob.
+"""Vercel entry point: runs the same FitShareHandler as server.py, with server-data kept in Supabase.
 
 Every /api/* request is rewritten here (vercel.json). Before the request we download files that
 changed on other instances into /tmp; after it we upload what changed. Bodies over Vercel's 4.5MB
@@ -17,9 +17,11 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 os.environ.setdefault('FITSHARE_MODEL_DIR', '/tmp/fitshare-model-cache')
+# PyTorch가 Vercel 용량 한도를 넘어서, AI 상품 사진의 SAM은 Replicate에서 실행합니다(tools/replicate_sam.py).
+os.environ.setdefault('FITSHARE_SAM_PROVIDER', 'replicate')
 
 from server import MAX_BODY_BYTES, create_handler_class  # noqa: E402
-from tools.vercel_storage import StorageError, SyncedFolder, backends_from_env  # noqa: E402
+from tools.vercel_storage import StorageError, SyncedFolder, store_from_env  # noqa: E402
 
 
 DATA_DIR = Path(os.environ.get('FITSHARE_DATA_DIR', '/tmp/fitshare-data'))
@@ -29,8 +31,13 @@ RESPONSE_LIMIT_BYTES = 4_000_000
 SAFE_CHUNK_ID = re.compile(r'^[0-9a-f]{32}$')
 # POST 요청 중 저장 공간을 바꾸지 않는 것(사진 분석)은 쓰기 잠금 없이 처리합니다.
 READ_ONLY_POSTS = {('garments', 'analyze'), ('measurements', 'automatic')}
-# 사진 GET은 1초 안에 다시 확인했다면 동기화를 건너뛰어 Redis 사용량을 줄입니다.
+# 사진 GET은 1초 안에 다시 확인했다면 동기화를 건너뛰어 Supabase 요청을 줄입니다.
 PHOTO_SUFFIXES = {'photo', 'closet-photo', 'tryon-photo', 'thumbnail', 'product-photo', 'photos'}
+# 데이터셋 실험은 사진 66MB와 긴 계산이 필요해 PC(server.py)에서만 다시 돌립니다. Vercel은 저장된 결과만 보여 줘요.
+LOCAL_ONLY_POSTS = {('measure-dataset', 'run'), ('measure-dataset', 'round3', 'run'),
+                    ('measure-dataset', 'gemini'), ('measure-dataset', 'save-as-experiment')}
+SAVED_REPORT_GETS = {('measure-dataset',), ('measure-dataset', 'model-comparison')}
+LOCAL_ONLY_MESSAGE = '웹(Vercel)에서는 저장된 실험 결과만 볼 수 있어요. 실험을 다시 하려면 PC에서 python server.py로 실행해 주세요.'
 
 _folder = None
 _folder_error = None
@@ -42,8 +49,7 @@ def get_folder():
     with _folder_lock:
         if _folder is None and _folder_error is None:
             try:
-                redis, blob = backends_from_env()
-                _folder = SyncedFolder(DATA_DIR, redis, blob, os.environ.get('FITSHARE_REDIS_PREFIX', 'fitshare'))
+                _folder = SyncedFolder(DATA_DIR, store_from_env())
             except StorageError as error:
                 _folder_error = str(error)
     return _folder
@@ -59,6 +65,11 @@ class handler(BaseHandler):
             return self.send_json(200, {'chunked': True, 'storage': get_folder() is not None})
         if len(parts) == 3 and parts[0] == '_chunks':
             return self.send_chunk(parts[1], parts[2])
+        if parts == ['_keepalive']:
+            # Vercel Cron이 하루 한 번 불러 Supabase 무료 프로젝트가 멈추지 않게 합니다.
+            return self.synced(lambda: self.send_json(200, {'ok': True}), write=False)
+        if tuple(parts) in SAVED_REPORT_GETS:
+            return self.synced(self.saved_report_only, write=False)
         is_photo = len(parts) >= 3 and parts[-2 if parts[0] == 'experiments' else -1] in PHOTO_SUFFIXES
         return self.synced(super().do_GET, write=False, pull_max_age=1.0 if is_photo else 0.0)
 
@@ -70,10 +81,21 @@ class handler(BaseHandler):
 
     def do_POST(self):
         parts = tuple(self.api_parts() or [])
-        return self.synced(super().do_POST, write=parts not in READ_ONLY_POSTS)
+        if parts in LOCAL_ONLY_POSTS:
+            return self.send_json(503, {'error': LOCAL_ONLY_MESSAGE})
+        # AI 상품 사진은 SAM·생성에 몇 분 걸려요. 그동안 다른 저장을 막지 않도록 잠금 없이 처리하고,
+        # 다른 서버가 먼저 바꾼 파일은 덮어쓰지 않는 동기화(push)에 맡깁니다.
+        long_running = len(parts) == 3 and parts[0] == 'garments' and parts[2] == 'product-photo'
+        return self.synced(super().do_POST, write=parts not in READ_ONLY_POSTS and not long_running)
 
     def do_DELETE(self):
         return self.synced(super().do_DELETE, write=True)
+
+    def saved_report_only(self):
+        # server.py는 결과가 없으면 바로 분석을 시작하지만, Vercel에는 데이터셋 사진이 없어요.
+        if not (DATA_DIR / 'measure-dataset-report' / 'report.json').is_file():
+            return self.send_json(404, {'error': '저장된 실험 결과가 없어요. ' + LOCAL_ONLY_MESSAGE})
+        return BaseHandler.do_GET(self)
 
     # ---- storage sync around the original handler ----
     def synced(self, method, write, pull_max_age=0.0):

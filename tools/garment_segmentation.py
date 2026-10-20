@@ -191,6 +191,11 @@ def get_yolo_grabcut_provider(garment_id=None, category=None):
 def _load_sam_predictor():
     global _sam_predictor
     with _sam_load_lock:
+        if _sam_predictor is None and os.environ.get('FITSHARE_SAM_PROVIDER') == 'replicate':
+            # Vercel에는 PyTorch가 들어가지 않아 같은 SAM을 Replicate에서 실행해요.
+            from tools.replicate_sam import ReplicateSamPredictor
+
+            _sam_predictor = ReplicateSamPredictor(os.environ.get('REPLICATE_API_TOKEN', '').strip())
         if _sam_predictor is None:
             from experiments.garment_ai.sam_experiment import create_predictor
 

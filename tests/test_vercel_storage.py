@@ -5,119 +5,103 @@ import os
 import tempfile
 import threading
 import unittest
+import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from tools import vercel_storage
+from tools.vercel_seed import copy_saved_reports
 from tools.vercel_storage import SyncedFolder
 
 
-class FakeRedis:
-    """Just the Redis commands SyncedFolder uses, kept in memory."""
+class FakeSupabase:
+    """The database functions in supabase/schema.sql and the Storage bucket, kept in memory."""
 
     def __init__(self):
-        self.values = {}
-        self.hashes = {}
-        self.calls = 0
+        self.rows = {}
+        self.objects = {}
+        self.locks = {}
+        self.chunks = {}
 
-    def pipeline(self, commands):
-        self.calls += 1
-        return [self.run(*command) for command in commands]
+    def manifest(self):
+        return {path: {key: row[key] for key in ('path', 'version', 'kind', 'size', 'object_path')}
+                for path, row in self.rows.items()}
 
-    def command(self, *args):
-        return self.pipeline([list(args)])[0]
+    def read_texts(self, paths):
+        return {path: self.rows[path]['content'] for path in paths if path in self.rows}
 
-    def run(self, name, *args):
-        if name == 'GET':
-            return self.values.get(args[0])
-        if name == 'SET':
-            if 'NX' in args and args[0] in self.values:
-                return None
-            self.values[args[0]] = args[1]
-            return 'OK'
-        if name == 'DEL':
-            return int(self.values.pop(args[0], None) is not None)
-        if name == 'HGETALL':
-            flat = []
-            for key, value in self.hashes.get(args[0], {}).items():
-                flat += [key, value]
-            return flat
-        if name == 'EVAL':
-            script, _, *rest = args
-            if script == vercel_storage.CAS_SET_SCRIPT:
-                manifest, file_key, rel, expected, entry, text = rest
-                current = self.hashes.setdefault(manifest, {}).get(rel)
-                if (current is None and expected == '') or current == expected:
-                    if text:
-                        self.values[file_key] = text
-                    self.hashes[manifest][rel] = entry
-                    return 1
-                return 0
-            if script == vercel_storage.CAS_DELETE_SCRIPT:
-                manifest, file_key, rel, expected = rest
-                if self.hashes.setdefault(manifest, {}).get(rel) == expected:
-                    del self.hashes[manifest][rel]
-                    self.values.pop(file_key, None)
-                    return 1
-                return 0
-            if script == vercel_storage.RELEASE_LOCK_SCRIPT:
-                key, token = rest
-                if self.values.get(key) == token:
-                    del self.values[key]
-                    return 1
-                return 0
-        raise AssertionError(f'unexpected command {name}')
+    def apply(self, operations):
+        results = []
+        for op in operations:
+            current = self.rows.get(op['path'])
+            if op['action'] == 'delete':
+                ok = current is not None and current['version'] == op['expected']
+                if ok:
+                    del self.rows[op['path']]
+            else:
+                ok = (current is None and op['expected'] == '') or (current is not None and current['version'] == op['expected'])
+                if ok:
+                    self.rows[op['path']] = dict(op)
+            results.append(ok)
+        return results
 
+    def put_object(self, object_path, data, content_type):
+        self.objects[object_path] = data
 
-class FakeBlob:
-    def __init__(self):
-        self.files = {}
+    def get_object(self, object_path):
+        return self.objects[object_path]
 
-    def put(self, pathname, data, content_type):
-        url = f'https://store.private.blob.vercel-storage.com/{pathname}'
-        self.files[url] = data
-        return url
+    def delete_objects(self, object_paths):
+        for object_path in object_paths:
+            self.objects.pop(object_path, None)
 
-    def get(self, url):
-        return self.files[url]
+    def lock(self, token, seconds):
+        if 'server-data' in self.locks:
+            return False
+        self.locks['server-data'] = token
+        return True
 
-    def delete(self, urls):
-        for url in urls:
-            self.files.pop(url, None)
+    def unlock(self, token):
+        if self.locks.get('server-data') == token:
+            del self.locks['server-data']
+
+    def put_chunk(self, key, value, seconds):
+        self.chunks[key] = value
+
+    def take_chunks(self, keys):
+        return [self.chunks.pop(key, None) for key in keys]
 
 
 class SyncedFolderTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.redis = FakeRedis()
-        self.blob = FakeBlob()
-        self.a = SyncedFolder(Path(self.temp.name) / 'a', self.redis, self.blob)
-        self.b = SyncedFolder(Path(self.temp.name) / 'b', self.redis, self.blob)
+        self.store = FakeSupabase()
+        self.a = SyncedFolder(Path(self.temp.name) / 'a', self.store)
+        self.b = SyncedFolder(Path(self.temp.name) / 'b', self.store)
 
     def tearDown(self):
         self.temp.cleanup()
 
-    def test_json_goes_to_redis_and_photo_to_blob_then_other_instance_reads_them(self):
+    def test_json_goes_to_table_and_photo_to_bucket_then_other_instance_reads_them(self):
         (self.a.root / 'garments' / 'g1').mkdir(parents=True)
         (self.a.root / 'garments' / 'g1' / 'garment.json').write_text('{"name": "셔츠"}', encoding='utf-8')
         (self.a.root / 'garments' / 'g1' / 'photo.jpg').write_bytes(b'\xff\xd8\xffphoto')
         self.assertEqual(self.a.push()['uploaded'], 2)
-        self.assertEqual(len(self.blob.files), 1)
-        self.assertIn('fitshare:file:garments/g1/garment.json', self.redis.values)
+        self.assertEqual(len(self.store.objects), 1)
+        self.assertEqual(self.store.rows['garments/g1/garment.json']['content'], '{"name": "셔츠"}')
 
         self.b.pull()
         self.assertEqual((self.b.root / 'garments' / 'g1' / 'garment.json').read_text(encoding='utf-8'), '{"name": "셔츠"}')
         self.assertEqual((self.b.root / 'garments' / 'g1' / 'photo.jpg').read_bytes(), b'\xff\xd8\xffphoto')
 
-    def test_overwrite_replaces_old_blob_and_delete_reaches_other_instance(self):
+    def test_overwrite_replaces_old_photo_and_delete_reaches_other_instance(self):
         photo = self.a.root / 'photo.png'
         photo.write_bytes(b'one')
         self.a.push()
         self.b.pull()
         photo.write_bytes(b'two!')
         self.a.push()
-        self.assertEqual(list(self.blob.files.values()), [b'two!'])
+        self.assertEqual(list(self.store.objects.values()), [b'two!'])
         self.b.pull()
         self.assertEqual((self.b.root / 'photo.png').read_bytes(), b'two!')
 
@@ -125,7 +109,7 @@ class SyncedFolderTests(unittest.TestCase):
         self.assertEqual(self.a.push()['removed'], 1)
         self.b.pull()
         self.assertFalse((self.b.root / 'photo.png').exists())
-        self.assertEqual(self.blob.files, {})
+        self.assertEqual(self.store.objects, {})
 
     def test_stale_instance_does_not_overwrite_newer_change(self):
         (self.a.root / 'index.json').write_text('[1]', encoding='utf-8')
@@ -136,7 +120,7 @@ class SyncedFolderTests(unittest.TestCase):
         # b edits its old copy before seeing a's change
         (self.b.root / 'index.json').write_text('[1, 3]', encoding='utf-8')
         self.assertEqual(self.b.push()['conflicts'], 1)
-        self.assertEqual(self.redis.values['fitshare:file:index.json'], '[1, 2]')
+        self.assertEqual(self.store.rows['index.json']['content'], '[1, 2]')
         self.b.pull()
         self.assertEqual((self.b.root / 'index.json').read_text(encoding='utf-8'), '[1, 2]')
 
@@ -156,6 +140,21 @@ class SyncedFolderTests(unittest.TestCase):
         self.assertIsNotNone(self.b.acquire_write_lock(wait_seconds=0))
 
 
+class SeedReportTests(unittest.TestCase):
+    def test_saved_reports_point_photos_at_the_docs_copy(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            docs_data, report_dir = Path(temporary) / 'docs', Path(temporary) / 'report'
+            docs_data.mkdir()
+            row = {'sourceUrl': 'assets/photos/ChArUco/a.jpg', 'imagePath': 'measure_dataset/ChArUco/a.jpg'}
+            (docs_data / 'measure-dataset.json').write_text(json.dumps({'rows': [row]}), encoding='utf-8')
+            (docs_data / 'measure-dataset-round3.json').write_text(json.dumps({'rows': [dict(row, sourceUrl='/already/ok.jpg')]}), encoding='utf-8')
+            copy_saved_reports(docs_data, report_dir)
+            report = json.loads((report_dir / 'report.json').read_text(encoding='utf-8'))
+            round3 = json.loads((report_dir / 'round3.json').read_text(encoding='utf-8'))
+        self.assertEqual(report['rows'][0]['sourceUrl'], 'docs/assets/photos/ChArUco/a.jpg')
+        self.assertEqual(round3['rows'][0]['sourceUrl'], '/already/ok.jpg')
+
+
 def load_vercel_entry(data_dir):
     os.environ['FITSHARE_DATA_DIR'] = str(data_dir)
     path = Path(__file__).resolve().parents[1] / 'api' / 'index.py'
@@ -166,19 +165,18 @@ def load_vercel_entry(data_dir):
 
 
 class VercelEntryTests(unittest.TestCase):
-    """Two fake Vercel instances share one fake Redis/Blob, like real cold starts."""
+    """Two fake Vercel instances share one fake Supabase, like real cold starts."""
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.redis = FakeRedis()
-        self.blob = FakeBlob()
+        self.store = FakeSupabase()
         self.servers = []
         self.urls = [self.start_instance(Path(self.temp.name) / name) for name in ('one', 'two')]
         self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
 
     def start_instance(self, data_dir):
         module = load_vercel_entry(data_dir)
-        module._folder = SyncedFolder(data_dir, self.redis, self.blob)
+        module._folder = SyncedFolder(data_dir, self.store)
         httpd = ThreadingHTTPServer(('127.0.0.1', 0), module.handler)
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()
@@ -211,9 +209,11 @@ class VercelEntryTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body)['user']['username'], 'student1')
 
-    def test_platform_check_and_unknown_routes(self):
+    def test_platform_check_keepalive_and_unknown_routes(self):
         status, _, body = self.request(self.urls[0], '/api/_platform')
         self.assertEqual((status, json.loads(body)['chunked']), (200, True))
+        status, _, body = self.request(self.urls[0], '/api/_keepalive')
+        self.assertEqual((status, json.loads(body)), (200, {'ok': True}))
         status, _, _ = self.request(self.urls[0], '/api/nothing-here')
         self.assertEqual(status, 404)
 
@@ -257,14 +257,32 @@ class VercelEntryTests(unittest.TestCase):
         finally:
             module.RESPONSE_LIMIT_BYTES, module.CHUNK_CHARS = 4_000_000, 3_000_000
 
+    def test_dataset_pages_show_saved_results_and_never_start_analysis(self):
+        status, _, body = self.request(self.urls[0], '/api/measure-dataset')
+        self.assertEqual(status, 404)
+        self.assertIn('python server.py', json.loads(body)['error'])
+        self.assertEqual(self.store.rows, {})  # nothing (like an empty report) was saved
+
+        for path in ('/api/measure-dataset/run', '/api/measure-dataset/round3/run',
+                     '/api/measure-dataset/gemini', '/api/measure-dataset/save-as-experiment'):
+            status, _, body = self.request(self.urls[0], path, method='POST', body=b'{}')
+            self.assertEqual(status, 503, path)
+
+        report = {'generatedAt': 'x', 'summary': {}, 'byBackground': [], 'byGarment': [], 'rows': []}
+        self.store.apply([{'action': 'set', 'path': 'measure-dataset-report/report.json', 'version': 'v1',
+                           'expected': '', 'kind': 'text', 'size': 1, 'object_path': None,
+                           'content': json.dumps(report)}])
+        status, _, body = self.request(self.urls[1], '/api/measure-dataset')
+        self.assertEqual((status, json.loads(body)), (200, report))
+
     def test_storage_missing_gives_clear_message(self):
         module = self.servers[0][2]
         saved = module._folder
-        module._folder, module._folder_error = None, 'Vercel 저장소가 연결되지 않았어요: Vercel Blob'
+        module._folder, module._folder_error = None, 'Supabase가 연결되지 않았어요: SUPABASE_URL'
         try:
             status, _, body = self.request(self.urls[0], '/api/garments')
             self.assertEqual(status, 503)
-            self.assertIn('Vercel Blob', json.loads(body)['error'])
+            self.assertIn('Supabase', json.loads(body)['error'])
         finally:
             module._folder, module._folder_error = saved, None
 
