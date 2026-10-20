@@ -11,3 +11,5 @@ measure_pipeline/output/debug/
 measure_pipeline/output/seg/
 measure_pipeline/output/sweep/
 measure_pipeline/output/calib/
+# Vercel CLI 연결 정보(.vercel)와 내려받은 환경 변수(.env.local 등)는 올리지 않습니다.
+.vercel
