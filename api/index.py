@@ -11,6 +11,7 @@ import os
 import re
 import sys
 import threading
+import time
 import uuid
 from pathlib import Path
 
@@ -20,6 +21,7 @@ os.environ.setdefault('FITSHARE_MODEL_DIR', '/tmp/fitshare-model-cache')
 # PyTorch가 Vercel 용량 한도를 넘어서, AI 상품 사진의 SAM은 Replicate에서 실행합니다(tools/replicate_sam.py).
 os.environ.setdefault('FITSHARE_SAM_PROVIDER', 'replicate')
 
+import tools.replicate_product_photo as product_photo  # noqa: E402
 from server import MAX_BODY_BYTES, create_handler_class  # noqa: E402
 from tools.vercel_storage import StorageError, SyncedFolder, store_from_env  # noqa: E402
 
@@ -38,10 +40,28 @@ LOCAL_ONLY_POSTS = {('measure-dataset', 'run'), ('measure-dataset', 'round3', 'r
                     ('measure-dataset', 'gemini'), ('measure-dataset', 'save-as-experiment')}
 SAVED_REPORT_GETS = {('measure-dataset',), ('measure-dataset', 'model-comparison')}
 LOCAL_ONLY_MESSAGE = '웹(Vercel)에서는 저장된 실험 결과만 볼 수 있어요. 실험을 다시 하려면 PC에서 python server.py로 실행해 주세요.'
+CONFLICT_MESSAGE = '다른 곳에서 먼저 바뀐 자료가 있어 저장하지 못했어요. 새로고침한 뒤 다시 시도해 주세요.'
+# Vercel 함수는 300초에 끊겨요. SAM 모델이 깨어나느라 이 시간을 넘기면 상품 사진 생성은 다음 번에 합니다.
+PRODUCT_PHOTO_START_LIMIT_SECONDS = 150
 
 _folder = None
 _folder_error = None
 _folder_lock = threading.Lock()
+_request = threading.local()
+_generate_product_photo = product_photo.generate_product_photo
+
+
+def generate_product_photo_in_time(*args, **kwargs):
+    """Stop before the 300s limit; the SAM cutout is already saved, so the next try only generates."""
+    started = getattr(_request, 'started', None)
+    if started is not None and time.monotonic() - started > PRODUCT_PHOTO_START_LIMIT_SECONDS:
+        raise product_photo.ProductPhotoError(
+            'SAM 모델을 깨우느라 시간이 오래 걸렸어요. 옷 분리 사진은 저장했으니 한 번 더 눌러 주세요.')
+    return _generate_product_photo(*args, **kwargs)
+
+
+# server.py가 상품 사진을 만들 때 이 함수를 불러요(호출할 때 모듈에서 가져가므로 여기서 바꿔 둡니다).
+product_photo.generate_product_photo = generate_product_photo_in_time
 
 
 def get_folder():
@@ -117,25 +137,40 @@ class handler(BaseHandler):
         real_wfile = self.wfile
         buffer = io.BytesIO()
         self.wfile = buffer
+        _request.started = time.monotonic()
         try:
-            method()
-        finally:
-            self.wfile = real_wfile
             try:
-                folder.push()
-            except (StorageError, OSError) as error:
-                self.log_error('storage push failed: %s', error)
+                method()
+            finally:
+                _request.started = None
+                self.wfile = real_wfile
+                failure = self.push_changes(folder, write)
+            if failure:
                 buffer = io.BytesIO()
                 self.wfile = buffer
-                self.send_json(503, {'error': '저장소에 저장하지 못했어요. 잠시 뒤 다시 시도해 주세요.'})
+                self.send_json(failure[0], {'error': failure[1]})
                 self.wfile = real_wfile
-            finally:
-                if token:
-                    try:
-                        folder.release_write_lock(token)
-                    except StorageError:
-                        pass  # the lock expires by itself
+        finally:
+            if token:
+                try:
+                    folder.release_write_lock(token)
+                except StorageError:
+                    pass  # the lock expires by itself
         self.wfile.write(self.shrink_response(buffer.getvalue()))
+
+    def push_changes(self, folder, write):
+        """Upload this request's changes; return (status, message) when the reply must not say success."""
+        try:
+            result = folder.push()
+        except (StorageError, OSError) as error:
+            self.log_error('storage push failed: %s', error)
+            return 503, '저장소에 저장하지 못했어요. 잠시 뒤 다시 시도해 주세요.'
+        if result['uploaded'] or result['removed'] or result['conflicts']:
+            self.log_message('storage push %s %s: %s', self.command, self.path.split('?')[0], result)
+        if write and result['conflicts']:
+            # 잠금을 잡고도 충돌했다면 저장이 반영되지 않은 것이라 성공으로 답하지 않아요.
+            return 409, CONFLICT_MESSAGE
+        return None
 
     # ---- big bodies ----
     def read_payload(self):

@@ -275,6 +275,30 @@ class VercelEntryTests(unittest.TestCase):
         status, _, body = self.request(self.urls[1], '/api/measure-dataset')
         self.assertEqual((status, json.loads(body)), (200, report))
 
+    def test_write_that_conflicts_does_not_report_success(self):
+        self.request(self.urls[0], '/api/auth/signup', {'username': 'student4', 'password': 'pass1234', 'name': '학생4'})
+        folder = self.servers[0][2]._folder
+        real_push = folder.push
+        folder.push = lambda: {'uploaded': 0, 'removed': 0, 'conflicts': 1}
+        try:
+            state = {'version': 1, 'users': [], 'exchanges': [], 'badges': [], 'finalizedMonths': []}
+            status, _, body = self.request(self.urls[0], '/api/ranking', {'state': state, 'baseRev': 0}, method='POST')
+        finally:
+            folder.push = real_push
+        self.assertEqual(status, 409)
+        self.assertIn('새로고침', json.loads(body)['error'])
+        self.assertEqual(self.store.locks, {})  # the write lock was released
+
+    def test_product_photo_generation_stops_before_the_vercel_time_limit(self):
+        module = self.servers[0][2]
+        module._request.started = 0.0  # pretend SAM took very long
+        try:
+            with self.assertRaises(module.product_photo.ProductPhotoError) as caught:
+                module.product_photo.generate_product_photo(b'png', 'prompt', 'token', 'version')
+        finally:
+            module._request.started = None
+        self.assertIn('한 번 더', str(caught.exception))
+
     def test_storage_missing_gives_clear_message(self):
         module = self.servers[0][2]
         saved = module._folder
