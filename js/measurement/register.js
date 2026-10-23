@@ -106,7 +106,7 @@ async function handlePhotoSelection(input) {
   manualButton.hidden = true;
   analysisStatus.textContent = '';
   photoPreview.hidden = true;
-  if (!file.type.startsWith('image/')) {
+  if (!file.type?.startsWith('image/')) {
     showStatus(analysisStatus, '사진 파일을 골라 주세요.', true);
     return;
   }
@@ -123,11 +123,28 @@ async function handlePhotoSelection(input) {
   }
 }
 
-photoInputs.forEach((input) => input.addEventListener('change', () => {
+// 태블릿·휴대폰 갤러리의 파일은 입력칸을 비우면 읽을 수 없게 되는 일이 있어요.
+// 그래서 사진 내용을 먼저 메모리로 복사한 뒤에 입력칸을 비웁니다.
+async function snapshotPhoto(file) {
+  const buffer = await file.arrayBuffer();
+  const guessedType = /\.png$/i.test(file.name || '') ? 'image/png' : /\.(jpe?g)$/i.test(file.name || '') ? 'image/jpeg' : '';
+  return new File([buffer], file.name || 'photo.jpg', { type: file.type || guessedType, lastModified: file.lastModified });
+}
+
+photoInputs.forEach((input) => input.addEventListener('change', async () => {
   const selectedFile = input.files?.[0];
   if (!selectedFile) return;
-  void handlePhotoSelection({ files: [selectedFile] });
+  showStatus(analysisStatus, '사진을 불러오고 있어요.');
+  let copy;
+  try {
+    copy = await snapshotPhoto(selectedFile);
+  } catch {
+    input.value = '';
+    showStatus(analysisStatus, '사진을 읽지 못했어요. 구글 포토 같은 클라우드 사진이면 먼저 태블릿에 저장한 뒤 다시 골라 주세요.', true);
+    return;
+  }
   input.value = '';
+  void handlePhotoSelection({ files: [copy] });
 }));
 document.querySelector('#choose-gallery-photo').addEventListener('click', () => galleryInput.click());
 

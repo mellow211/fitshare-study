@@ -16,7 +16,7 @@ class RegistrationPageTests(unittest.TestCase):
         self.assertIn('async function reload(prioritizeId = null)', closet)
         self.assertIn('if (prioritizeId && a.garment.id === prioritizeId) return -1;', closet)
         self.assertIn('if (prioritizeId && b.garment.id === prioritizeId) return 1;', closet)
-        self.assertIn('register.js?v=progress-1', (ROOT / 'measure' / 'register.html').read_text(encoding='utf-8'))
+        self.assertIn('register.js?v=gallery-snapshot-1', (ROOT / 'measure' / 'register.html').read_text(encoding='utf-8'))
 
     def test_garment_type_two_is_labeled_as_tshirt_in_registration_and_catalog(self):
         registration = (ROOT / 'measure' / 'register.html').read_text(encoding='utf-8')
