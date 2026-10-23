@@ -17,6 +17,51 @@ from tools.garment_thumbnails import prepare_garment_thumbnails
 
 
 class GarmentThumbnailLoadingTests(unittest.TestCase):
+    def test_list_preview_uses_saved_images_without_refreshing_segmentation(self):
+        cases = [
+            ('legacy-thumbnail', 'thumbnail', (20, 210, 30)),
+            ('legacy-cutout', 'cutout', (20, 210, 30)),
+            ('missing-preview', None, (220, 30, 20)),
+            ('broken-preview', 'broken', (220, 30, 20)),
+            ('empty-preview', 'empty', (220, 30, 20)),
+            ('refreshed-cutout', 'refreshed', (30, 80, 100)),
+        ]
+        for name, saved, expected in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                garment_id = str(uuid.uuid4())
+                folder = root / 'garments' / garment_id
+                folder.mkdir(parents=True)
+                original = cv2.imencode('.jpg', np.full((600, 400, 3), (220, 30, 20), np.uint8))[1].tobytes()
+                (folder / 'photo.jpg').write_bytes(original)
+                metadata = json.dumps({'id': garment_id, 'maskPipelineVersion': 'legacy',
+                                       'thumbnailVersion': 0 if saved == 'refreshed' else 2})
+                (folder / 'garment.json').write_text(metadata, encoding='utf-8')
+                if saved:
+                    filename = 'closet.png' if saved == 'cutout' else 'closet-thumbnail.png'
+                    png = cv2.imencode('.png', np.full((300, 240, 4), (20, 210, 30, 255), np.uint8))[1].tobytes()
+                    (folder / filename).write_bytes(b'broken' if saved == 'broken' else b'' if saved == 'empty' else png)
+                    if saved == 'refreshed':
+                        updated = np.full((300, 240, 4), (30, 80, 100, 255), np.uint8)
+                        (folder / 'closet.png').write_bytes(cv2.imencode('.png', updated)[1].tobytes())
+                httpd = server.create_server('127.0.0.1', 0, root)
+                thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+                thread.start()
+                try:
+                    with patch('server.ensure_garment_cutout', side_effect=RuntimeError('AI must not run')) as ai:
+                        url = f'http://127.0.0.1:{httpd.server_port}/api/garments/{garment_id}/thumbnail'
+                        with urllib.request.urlopen(url, timeout=3) as response:
+                            image = cv2.imdecode(np.frombuffer(response.read(), np.uint8), cv2.IMREAD_UNCHANGED)
+                        ai.assert_not_called()
+                    self.assertLessEqual(max(image.shape[:2]), 200)
+                    np.testing.assert_allclose(image[50, 50, :3], expected, atol=3)
+                    self.assertEqual((folder / 'photo.jpg').read_bytes(), original)
+                    self.assertEqual((folder / 'garment.json').read_text(encoding='utf-8'), metadata)
+                finally:
+                    httpd.shutdown()
+                    httpd.server_close()
+                    thread.join(timeout=2)
+
     def test_product_thumbnail_cache_refreshes_when_photo_changes(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

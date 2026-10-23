@@ -307,6 +307,23 @@ def get_garment_thumbnail_bytes(garments_dir, garment_id, metadata_lock=None):
         raise
 
 
+def get_saved_garment_preview_bytes(garments_dir, garment_id):
+    """Resize saved previews only; listing clothes must never start AI segmentation."""
+    garment_dir = Path(garments_dir) / garment_id
+    item = read_json(garment_dir / 'garment.json')
+    # Explicit cutout refresh invalidates the old thumbnail; resize the new cutout instead.
+    invalidated = isinstance(item, dict) and item.get('thumbnailVersion') == 0
+    filenames = ('closet.png',) if invalidated else ('closet-thumbnail.png', 'closet.png')
+    for filename in filenames:
+        try:
+            saved = (garment_dir / filename).read_bytes()
+            if saved:
+                return make_garment_thumbnail(saved)
+        except (OSError, ValueError):
+            continue
+    raise FileNotFoundError('저장된 옷장 미리보기가 없어요.')
+
+
 def get_product_thumbnail_bytes(garments_dir, garment_id):
     garment_dir = Path(garments_dir) / garment_id
     item = read_json(garment_dir / 'garment.json')
@@ -903,7 +920,7 @@ def create_handler_class(data_dir=DEFAULT_DATA_DIR):
                 self.log_error('AI thumbnail unavailable for %s: %s', garment_id, error)
             if thumbnail is None:
                 try:
-                    thumbnail = get_garment_thumbnail_bytes(garments_dir, garment_id, lock)
+                    thumbnail = get_saved_garment_preview_bytes(garments_dir, garment_id)
                     content_type = 'image/png'
                 except FileNotFoundError:
                     pass

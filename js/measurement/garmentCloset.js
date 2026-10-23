@@ -149,7 +149,6 @@ export function createGarmentCloset({ list, status, pagination, filterControls =
       const id = encodeURIComponent(garment.id);
       const choices = [
         `/api/garments/${id}/thumbnail?v=product-yolo-priority-3&g=${encodeURIComponent(garment.productPhotoGeneratedAt || 'none')}`,
-        `/api/garments/${id}/closet-photo`,
         `/api/garments/${id}/photo`
       ];
       let choice = 0;

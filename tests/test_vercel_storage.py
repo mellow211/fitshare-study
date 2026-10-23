@@ -10,6 +10,7 @@ import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from unittest.mock import patch
 
 from tools.vercel_seed import copy_saved_reports
 from tools.vercel_storage import SyncedFolder
@@ -209,6 +210,28 @@ class VercelEntryTests(unittest.TestCase):
         status, _, body = self.request(self.urls[1], '/api/auth/me')
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body)['user']['username'], 'student1')
+
+    def test_cold_instance_serves_legacy_preview_without_ai_or_metadata_changes(self):
+        import cv2
+        import numpy as np
+
+        garment_id = '11111111-1111-4111-8111-111111111111'
+        folder = self.servers[0][2]._folder
+        garment = folder.root / 'garments' / garment_id
+        garment.mkdir(parents=True)
+        metadata = json.dumps({'id': garment_id, 'maskPipelineVersion': 'legacy', 'thumbnailVersion': 2})
+        (garment / 'garment.json').write_text(metadata, encoding='utf-8')
+        png = cv2.imencode('.png', np.full((60, 40, 4), (20, 100, 200, 255), np.uint8))[1].tobytes()
+        (garment / 'closet-thumbnail.png').write_bytes(png)
+        folder.push()
+        before = json.loads(json.dumps(self.store.rows))
+        with patch('server.ensure_garment_cutout', side_effect=RuntimeError('AI must not run')) as ai:
+            status, headers, body = self.request(self.urls[1], f'/api/garments/{garment_id}/thumbnail')
+            self.assertEqual(status, 200, body)
+            self.assertEqual(headers['Content-Type'], 'image/png')
+            self.assertTrue(body.startswith(b'\x89PNG'))
+            ai.assert_not_called()
+        self.assertEqual(self.store.rows, before)
 
     def test_platform_check_keepalive_and_unknown_routes(self):
         status, _, body = self.request(self.urls[0], '/api/_platform')
