@@ -1,5 +1,21 @@
 /* 참여 랭킹 화면 전용 스타일입니다. 공통 변수(--ink, --blue 등)는 styles.css 것을 그대로 씁니다. */
 .ranking-panel { padding:24px; border:1px solid var(--line); border-radius:20px; background:#fff; }
+.user-box .today-sharing-nav { min-height:38px; padding:7px 11px; border:1px solid #f1d18b; border-radius:10px; color:#76500b; background:#fff7df; font-size:12px; font-weight:800; cursor:pointer; }
+.today-sharing-dialog { width:min(94vw,620px); max-height:92vh; overflow:auto; }
+.today-sharing-eyebrow { margin:0 0 4px; color:#987022; font-size:11px; font-weight:800; }
+.today-sharing-intro { margin:8px 0 14px; color:var(--muted); font-size:13px; line-height:1.6; }
+.today-sharing-section-title { margin:18px 0 9px; font:18px 'Jua'; }
+.today-sharing-card { margin:9px 0; padding:14px; border:1px solid #f0dfb9; border-radius:14px; background:#fffdfa; }
+.today-sharing-card.is-done { border-color:#cfe9df; background:#f6fcf9; }
+.today-sharing-card-top { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.today-sharing-status { color:#855d0c; font-size:12px; font-weight:900; }
+.today-sharing-card.is-done .today-sharing-status { color:#278263; }
+.today-sharing-card time { color:var(--muted); font-size:11px; }
+.today-sharing-card h4 { margin:11px 0 5px; font:19px 'Jua'; }
+.today-sharing-card p { margin:0; color:#59667a; font-size:13px; line-height:1.6; }
+.today-sharing-card p b { color:var(--ink); }
+.today-sharing-complete { width:100%; min-height:46px; margin-top:13px; border:0; border-radius:10px; color:#fff; background:#258b6f; font-size:14px; font-weight:900; cursor:pointer; }
+.today-sharing-complete:disabled { opacity:.6; cursor:wait; }
 .ranking-intro { display:flex; align-items:center; gap:18px; }
 .ranking-intro h3 { margin:0 0 5px; font:24px 'Jua'; }
 .ranking-intro p { margin:0; color:var(--muted); font-size:13px; line-height:1.6; }
@@ -59,24 +75,55 @@
 .rk-reviews li { padding:8px 10px; border-radius:10px; background:#f4f7fc; }
 .rk-reviews span { display:block; margin-top:3px; color:#33415c; overflow-wrap:anywhere; }
 
-.school-closet-card.is-openable { cursor:pointer; }
-.school-closet-card.is-openable:focus-visible { outline:3px solid #3b6fd8; outline-offset:2px; }
 .garment-detail { width:min(92vw,420px); max-height:90vh; padding:18px; border:0; border-radius:16px; box-shadow:0 12px 40px rgba(20,30,60,.3); }
 .garment-detail::backdrop { background:rgba(20,30,60,.45); }
 .garment-detail h2 { margin:0 0 10px; font-size:18px; overflow-wrap:anywhere; }
+.garment-demo-badge { display:inline-flex; align-items:center; min-height:25px; width:max-content; margin:0 0 7px; padding:4px 10px; border:1px solid #d8c8fa; border-radius:999px; color:#58359a; background:#f1eaff; font-size:12px; font-weight:900; }
+.garment-exchange-history { margin:0 0 12px; padding:12px; border:1px solid #c9d8f3; border-radius:12px; background:#f1f6ff; }
+.garment-exchange-history h3 { margin:0 0 6px; font-size:15px; }
+.garment-exchange-history h4 { margin:8px 0 4px; font-size:13px; }
+.garment-exchange-history-summary, .garment-exchange-history-wait { margin:0; color:#33415c; font-size:13px; line-height:1.5; }
+.garment-exchange-ratings { display:grid; gap:6px; margin:0; padding:0; list-style:none; color:#22375d; font-size:12px; }
+.garment-exchange-rating { display:grid; grid-template-columns:minmax(0,1fr) auto auto; align-items:center; gap:8px; padding:7px 9px; border-radius:9px; background:#fff; }
+.garment-exchange-rating-label { min-width:0; overflow-wrap:anywhere; }
+.garment-exchange-stars { color:#e5a72c; font-size:14px; letter-spacing:1px; white-space:nowrap; }
+.garment-exchange-score { color:#33415c; font-size:11px; white-space:nowrap; }
+.garment-exchange-review { margin:10px 0 0; padding:10px 11px; border-left:3px solid #e5b94c; border-radius:8px; background:#fffdf5; }
+.garment-exchange-review-label { display:block; margin-bottom:4px; color:#8a6419; font-size:11px; }
+.garment-exchange-review-text { margin:0; color:#34445e; font-size:13px; line-height:1.55; overflow-wrap:anywhere; }
 .garment-detail-photo { display:block; width:100%; max-height:260px; object-fit:contain; border-radius:12px; background:#f4f7fc; }
-.garment-detail-info { margin:12px 0; display:flex; flex-direction:column; gap:6px; font-size:13px; }
-.garment-detail-info div { display:flex; gap:10px; }
-.garment-detail-info dt { flex:0 0 96px; color:#5b6b86; font-weight:700; }
-.garment-detail-info dd { margin:0; overflow-wrap:anywhere; }
-.garment-detail-status { margin:6px 0; font-weight:800; font-size:14px; }
+.garment-detail-info { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; margin:12px 0; font-size:12px; }
+.garment-detail-property { display:flex; align-items:flex-start; min-width:0; gap:7px; padding:8px; border:1px solid #e8edf5; border-radius:10px; background:#fbfcff; }
+.garment-detail-star { flex:none; color:#e5a72c; font-size:16px; line-height:1; }
+.garment-detail-property-copy { display:grid; min-width:0; gap:3px; }
+.garment-detail-property dt { color:#71809a; font-size:10px; font-weight:700; }
+.garment-detail-property dd { margin:0; color:#293b55; font-size:12px; font-weight:800; overflow-wrap:anywhere; }
+.garment-detail-property.is-missing dd { color:#929bad; font-weight:600; }
+.garment-detail-size-note { grid-column:1/-1; margin:0; padding:8px 10px; border-radius:9px; color:#66541f; background:#fff8e6; font-size:11px; line-height:1.45; }
+.garment-detail-measurements { display:grid; grid-column:1/-1; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; }
+.garment-detail-measurement { align-items:center; border-color:#d8e5fb; background:#f2f7ff; }
+.garment-detail-measurement .garment-detail-property-copy { grid-template-columns:auto 1fr; align-items:baseline; gap:8px; }
+.garment-detail-measurement dd { color:#2459a6; font-size:15px; }
+.garment-detail-status { margin:8px 0; padding:10px 12px; border:1px solid #d5dce7; border-radius:12px; font-weight:800; font-size:14px; }
+.garment-detail-status.is-available { color:#176c45; border-color:#b5e4c9; background:#e6f7ed; }
+.garment-detail-status.is-reserved { color:#805200; border-color:#f3d48c; background:#fff5d8; }
+.garment-detail-status.is-completed { color:#526078; border-color:#d5dce7; background:#edf0f5; }
+.garment-detail-status.is-unavailable { color:#805200; border-color:#f3d48c; background:#fff5d8; }
 .garment-detail label input { display:block; width:100%; margin-top:4px; box-sizing:border-box; }
 .garment-detail-message { min-height:1.2em; margin:6px 0; font-size:12px; font-weight:700; color:#368c71; }
 .garment-detail-message.is-error { color:#c0392b; }
-.garment-detail-buttons { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
-.garment-detail-delete { border:1px solid #e3a3a3; border-radius:8px; padding:7px 10px; color:#a63232; background:#fff7f7; font-weight:800; cursor:pointer; }
-.garment-detail-delete:hover:not(:disabled) { background:#ffeaea; }
-.garment-detail-delete:disabled { opacity:.6; cursor:wait; }
+.garment-detail-buttons { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.garment-detail button { display:inline-flex; justify-content:center; align-items:center; box-sizing:border-box; width:100%; height:52px; min-height:52px; padding:6px 8px; border:1px solid #cbd9ed; border-radius:10px; color:#315fae; background:#fff; font:inherit; font-size:13px; font-weight:800; line-height:1.2; cursor:pointer; white-space:normal; }
+.garment-detail button[hidden] { display:none; }
+.garment-detail button:hover:not(:disabled) { background:#eef4ff; }
+.garment-detail button:focus-visible { outline:3px solid #3b6fd8; outline-offset:2px; }
+.garment-detail button:disabled { opacity:.6; cursor:not-allowed; }
+.garment-detail .rk-ghost { min-height:52px; margin:0; padding:6px 8px; border:1px solid #cbd9ed; color:#315fae; background:#fff; }
+.garment-detail .garment-detail-reserve { margin-right:0; border-color:#31835c; color:#fff; background:#31835c; font-weight:900; }
+.garment-detail .garment-detail-reserve:hover:not(:disabled) { background:#236b49; }
+.garment-detail .garment-detail-reserve:disabled { color:#65738d; border-color:#d5dce7; background:#edf0f5; cursor:not-allowed; }
+.garment-detail .garment-detail-delete { border-color:#e3a3a3; color:#a63232; background:#fff7f7; }
+.garment-detail .garment-detail-delete:hover:not(:disabled) { background:#ffeaea; }
 
 .avatar { position:relative; display:inline-block; vertical-align:middle; flex:none; width:var(--av-size); height:var(--av-size); border-radius:50%; background:var(--av-bg); box-shadow:inset 0 0 0 2px #ffffffaa, 0 1px 4px #0002; font-size:calc(var(--av-size) * .56); line-height:var(--av-size); text-align:center; overflow:visible; }
 .avatar .av-hat { position:absolute; left:50%; top:-.36em; transform:translateX(-50%); font-size:.62em; line-height:1; }
@@ -164,4 +211,12 @@
   .my-page-dialog .rk-stats div { flex-direction:row; }
   .mypage-section .rk-pending-item { align-items:stretch; flex-direction:column; }
   .mypage-section .rk-row { flex-wrap:wrap; }
+}
+@media(max-width:460px) {
+  .garment-detail-info { gap:6px; }
+  .garment-detail-property { gap:5px; padding:7px; }
+  .garment-detail-property dd { font-size:11px; }
+  .garment-detail-measurement dd { font-size:14px; }
+  .garment-exchange-rating { grid-template-columns:minmax(0,1fr) auto; gap:5px; }
+  .garment-exchange-rating-label { grid-column:1/-1; }
 }

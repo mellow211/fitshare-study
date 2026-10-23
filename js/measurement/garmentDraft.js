@@ -11,7 +11,8 @@ export function createGarmentInputValues(count, savedGarments = []) {
       name: String(saved.name ?? `옷 ${index + 1}`),
       category: categories.has(saved.category) ? saved.category : 'top',
       length: String(saved.length ?? saved.referenceLengthCm ?? ''),
-      width: String(saved.width ?? saved.referenceWidthCm ?? '')
+      width: String(saved.width ?? saved.referenceWidthCm ?? ''),
+      collarLength: String(saved.collarLength ?? saved.referenceCollarToHemCm ?? '')
     };
   });
 }
@@ -27,7 +28,8 @@ export function readGarmentInputDraft(form, count, matOrder = ['M1', 'M2', 'M3',
       name: String(form.get(`name-${index}`) ?? ''),
       category: categories.has(category) ? category : 'top',
       length: String(form.get(`length-${index}`) ?? ''),
-      width: String(form.get(`width-${index}`) ?? '')
+      width: String(form.get(`width-${index}`) ?? ''),
+      collarLength: String(form.get(`collarLength-${index}`) ?? '')
     };
   });
   const defaultOrder = ['M1', 'M2', 'M3', 'M4'];

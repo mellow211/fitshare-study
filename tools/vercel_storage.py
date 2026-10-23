@@ -123,7 +123,9 @@ class SyncedFolder:
         for path in self.root.rglob('*'):
             rel = path.relative_to(self.root).as_posix()
             parts = rel.split('/')
-            if parts[0] in SKIPPED_TOP_FOLDERS or any(part.startswith('.') for part in parts):
+            # This persistent counter must survive cold starts and deletion of the last garment.
+            persistent_sequence = rel == 'garments/.sequences.json'
+            if parts[0] in SKIPPED_TOP_FOLDERS or (not persistent_sequence and any(part.startswith('.') for part in parts)):
                 continue
             if path.is_file():
                 stat = path.stat()

@@ -1,4 +1,5 @@
 import http.cookiejar
+import base64
 import importlib.util
 import json
 import os
@@ -216,6 +217,48 @@ class VercelEntryTests(unittest.TestCase):
         self.assertEqual((status, json.loads(body)), (200, {'ok': True}))
         status, _, _ = self.request(self.urls[0], '/api/nothing-here')
         self.assertEqual(status, 404)
+
+    def test_garment_sequence_survives_deletion_and_a_cold_instance(self):
+        self.request(self.urls[0], '/api/auth/signup',
+                     {'username': 'donor', 'password': 'pass1234', 'name': '등록 학생'})
+        payload = {'name': '상의', 'category': 'top', 'garmentTypeId': 1, 'gender': 'unisex',
+                   'lengthCm': 50, 'widthCm': 40, 'colorName': '파랑', 'schoolCode': '테스트학교',
+                   'measurementMethod': 'manual',
+                   'photoDataUrl': 'data:image/jpeg;base64,' + base64.b64encode(b'\xff\xd8\xffsample').decode()}
+        status, _, body = self.request(self.urls[0], '/api/garments', payload)
+        self.assertEqual(status, 201, body)
+        first = json.loads(body)
+        self.assertEqual(first['garmentNumber'], 1)
+        self.assertTrue(first['size'])
+        status, _, body = self.request(self.urls[0], f"/api/garments/{first['id']}", method='DELETE')
+        self.assertEqual(status, 200, body)
+        status, _, body = self.request(self.urls[1], '/api/garments', payload)
+        self.assertEqual(status, 201, body)
+        second = json.loads(body)
+        self.assertEqual(second['garmentNumber'], 2)
+        self.assertNotEqual(first['garmentCode'], second['garmentCode'])
+        self.assertIn('garments/.sequences.json', self.store.rows)
+
+    def test_teacher_handoff_is_visible_on_another_instance_and_rejects_stale_revision(self):
+        self.request(self.urls[0], '/api/auth/signup',
+                     {'username': 'teacher', 'password': 'pass1234', 'name': '선생님', 'teacherCode': 'fitshare'})
+        state = {'version': 1, 'users': [], 'exchanges': [{'id': 'e1', 'status': 'reserved'}],
+                 'badges': [], 'finalizedMonths': []}
+        self.assertEqual(self.request(self.urls[0], '/api/ranking', {'state': state, 'baseRev': 0})[0], 200)
+        status, _, body = self.request(self.urls[1], '/api/ranking/teacher-handoff',
+                                       {'exchangeId': 'e1', 'baseRev': 1})
+        self.assertEqual(status, 200, body)
+        status, _, body = self.request(self.urls[0], '/api/ranking')
+        self.assertEqual(json.loads(body)['state']['exchanges'][0]['status'], 'completed')
+        self.assertEqual(self.request(self.urls[0], '/api/ranking/teacher-handoff',
+                                      {'exchangeId': 'e1', 'baseRev': 1})[0], 409)
+
+    def test_teacher_handoff_rejects_anonymous_and_student_requests(self):
+        payload = {'exchangeId': 'e1', 'baseRev': 0}
+        self.assertEqual(self.request(self.urls[0], '/api/ranking/teacher-handoff', payload)[0], 401)
+        self.request(self.urls[0], '/api/auth/signup',
+                     {'username': 'student', 'password': 'pass1234', 'name': '학생'})
+        self.assertEqual(self.request(self.urls[1], '/api/ranking/teacher-handoff', payload)[0], 403)
 
     def test_body_sent_in_pieces_is_joined_before_the_route_runs(self):
         self.request(self.urls[0], '/api/auth/signup', {'username': 'student2', 'password': 'pass1234', 'name': '학생2'})

@@ -104,3 +104,28 @@ export async function mutateState(action) {
   }
   throw new RangeError('다른 친구들이 동시에 저장하고 있어요. 잠시 뒤에 다시 눌러 주세요.');
 }
+
+// 교사 전달 완료는 서버가 교사 권한과 예약 상태를 직접 확인한 뒤 저장합니다.
+export async function markTeacherHandoffShared(exchangeId) {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    let response;
+    try {
+      response = await fetch('/api/ranking/teacher-handoff', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ exchangeId, baseRev: cachedRev() })
+      });
+    } catch {
+      throw new Error('서버에 연결하지 못해 전달 완료를 저장하지 못했어요. 다시 연결한 뒤 시도해 주세요.');
+    }
+    const result = await response.json().catch(() => ({}));
+    if (response.ok && result.state) {
+      const state = normalizeState(result.state);
+      cacheState(state, result.rev ?? cachedRev() + 1);
+      try { new BroadcastChannel(CHANNEL).postMessage('changed'); } catch { /* 지원하지 않는 브라우저 */ }
+      return { state, shared: true };
+    }
+    if (response.status !== 409 || !result.state) throw new RangeError(result.error || '전달 완료를 저장하지 못했어요. 다시 시도해 주세요.');
+    cacheState(normalizeState(result.state), result.rev ?? cachedRev());
+  }
+  throw new RangeError('다른 친구들이 동시에 저장하고 있어요. 새로고침한 뒤 다시 눌러 주세요.');
+}

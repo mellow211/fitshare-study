@@ -4,13 +4,18 @@ import { renderRecommendation } from '../modules/recommendation.js';
 import { renderRanking } from '../modules/ranking.js?v=ranking-9';
 import { fetchMe, getUser, login, logout, signup } from './auth.js?v=auth-3';
 import { openProfileDialog } from '../modules/profile.js?v=profile-4';
+import { openTodaySharingDialog } from '../modules/todaySharing.js?v=garment-codes-1';
 import { createSchoolEntryResult } from './schoolEntry.js';
-import { createGarmentCloset } from './measurement/garmentCloset.js?v=closet-tools-6';
-import { openGarmentDetail } from '../modules/garmentDetail.js?v=detail-6';
+import { createGarmentCloset } from './measurement/garmentCloset.js?v=closet-tools-19';
+import { openGarmentDetail } from '../modules/garmentDetail.js?v=detail-16';
+import { initializeLandingShowcase } from './landingShowcase.js?v=hero-live-1';
 
 const root = document.querySelector('#module-root');
+initializeLandingShowcase();
 const tabs = document.querySelectorAll('.tab');
 const schoolInput = document.querySelector('#school-code');
+const requestedSchool = new URLSearchParams(window.location.search).get('school')?.trim();
+if (requestedSchool) schoolInput.value = requestedSchool.slice(0, 30);
 const schoolCloset = document.querySelector('#school-closet');
 const schoolClosetStatus = document.querySelector('#school-closet-status');
 const schoolClosetList = document.querySelector('#school-closet-list');
@@ -18,6 +23,7 @@ const schoolClosetView = createGarmentCloset({
   list: schoolClosetList,
   status: schoolClosetStatus,
   pagination: document.querySelector('#school-closet-pages'),
+  filterControls: document.querySelector('.school-closet-filters'),
   onOpen: openGarmentDetail
 });
 const renderers = { measurement: renderMeasurement, recommendation: renderRecommendation, ranking: renderRanking };
@@ -34,12 +40,16 @@ function selectTab(tabName) {
 }
 
 tabs.forEach((tab) => tab.addEventListener('click', () => selectTab(tab.dataset.tab)));
+document.querySelectorAll('[data-open-tab]').forEach((link) => {
+  link.addEventListener('click', () => selectTab(link.dataset.openTab));
+});
 function enterSchool() {
   const input = document.querySelector('#school-code');
   const message = document.querySelector('#entry-message');
   const action = document.querySelector('#entry-action');
   const result = createSchoolEntryResult(input.value);
   state.schoolCode = result.code;
+  try { localStorage.setItem('fitshare.schoolCode', result.code); } catch { /* 저장소를 사용할 수 없는 브라우저 */ }
   message.textContent = result.message;
   message.classList.toggle('is-error', !result.ok);
   action.hidden = !result.ok;
@@ -86,6 +96,7 @@ function showApp() {
   userBox.hidden = !user;
   document.querySelector('#user-name').textContent = user ? `🙂 ${user.name} 님 · 내페이지` : '';
   document.querySelector('#user-name').hidden = !user;
+  document.querySelector('#today-sharing-button').hidden = user?.role !== 'teacher';
   if (user) selectTab(state.activeTab);
   else {
     if(typeof disposeModule==='function')disposeModule();
@@ -128,6 +139,7 @@ authForm.addEventListener('submit', async (event) => {
   }
 });
 document.querySelector('#user-name').addEventListener('click', () => openProfileDialog());
+document.querySelector('#today-sharing-button').addEventListener('click', () => openTodaySharingDialog());
 document.querySelector('#logout-button').addEventListener('click', async () => {
   await logout();
   schoolCloset.hidden = true;

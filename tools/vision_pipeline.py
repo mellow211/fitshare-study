@@ -519,6 +519,7 @@ GARMENT_PROFILES = {
     3: {'name': '원피스', 'widthRatio': .15, 'lengthSpanRatio': .65, 'bottomRatio': .78, 'seedY': .28},
     4: {'name': '점퍼', 'widthRatio': .20, 'lengthSpanRatio': .50, 'bottomRatio': .63, 'seedY': .22},
     5: {'name': '바지', 'widthRatio': .10, 'lengthSpanRatio': .525, 'bottomRatio': .96, 'seedY': .22},
+    6: {'name': '치마', 'widthRatio': .12, 'lengthSpanRatio': .78, 'bottomRatio': .96, 'seedY': .20},
 }
 
 
@@ -532,20 +533,21 @@ CATEGORY_PROFILES = {
     'dress': {'widthRatio': .22, 'bottomRatio': .80, 'seedY': .28},
     'pants': {'widthRatio': .08, 'bottomRatio': .96, 'seedY': .22},
     'bottom': {'widthRatio': .08, 'bottomRatio': .96, 'seedY': .22},
+    'skirt': {'widthRatio': .12, 'bottomRatio': .96, 'seedY': .20},
 }
 
 
 def _component_mask(image, garment_id=None, category=None, max_working_long_side=848, mask_provider=None):
     cv2, np = _cv2_modules()
     profile = GARMENT_PROFILES.get(garment_id) if garment_id in GARMENT_PROFILES else None
-    width_kind = 'waist' if garment_id == 5 or category in {'pants', 'bottom'} else 'chest'
+    width_kind = 'waist' if garment_id in {5, 6} or category in {'pants', 'bottom', 'skirt'} else 'chest'
     if profile is None:
         profile = CATEGORY_PROFILES.get(category, CATEGORY_PROFILES['top'])
 
     scale = min(1.0, max_working_long_side / max(image.shape[:2]))
     working = cv2.resize(image, (round(image.shape[1] * scale), round(image.shape[0] * scale)), interpolation=cv2.INTER_AREA)
     height, width = working.shape[:2]
-    is_pants = width_kind == 'waist'
+    is_pants = garment_id == 5 or category in {'pants', 'bottom'}
     bottom_ratio = profile['bottomRatio']
     if mask_provider is not None:
         # 실험 6: GrabCut 대신 다른 분할 모듈이 준 마스크를 같은 뒤처리로 측정한다.
@@ -635,6 +637,39 @@ def validate_garment_dimensions(width_cm, length_cm):
         raise ValueError('옷 전체를 찾지 못했어요. 옷이 모두 보이게 다시 찍어 주세요.')
 
 
+def refine_hem_bottom(image, mask, top, bottom):
+    """Trim a connected soft shadow only when a clear image edge sits just above it."""
+    cv2, np = _cv2_modules()
+    if image.shape[:2] != mask.shape or bottom <= top + 2 or bottom >= mask.shape[0] - 1:
+        return int(bottom)
+    garment_height = bottom - top
+    search_radius = min(24, max(8, round(garment_height * .04)))
+    start = max(top + 2, bottom - search_radius)
+    sample_xs = np.flatnonzero(mask[bottom] > 0)
+    if len(sample_xs) < 8:
+        recent_rows = mask[max(top, bottom - 2):bottom + 1]
+        sample_xs = np.flatnonzero(np.any(recent_rows > 0, axis=0))
+    if len(sample_xs) < 8:
+        return int(bottom)
+
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    scores = []
+    for y in range(start, bottom):
+        # The two-pixel difference suppresses small fabric texture while retaining a hem/shadow edge.
+        differences = np.abs(gray[y + 1, sample_xs] - gray[y - 1, sample_xs])
+        scores.append(float(np.median(differences)))
+    if not scores:
+        return int(bottom)
+    strongest = max(scores)
+    if strongest < 24:
+        return int(bottom)
+    threshold = max(24, strongest * .88)
+    for y, score in zip(range(start, bottom), scores):
+        if score >= threshold:
+            return int(y)
+    return int(bottom)
+
+
 def _dominant_color_name(image, mask):
     cv2, np = _cv2_modules()
     pixels = image[mask > 0]
@@ -665,9 +700,10 @@ def measure_garment(image, garment_id=None, category=None, include_closet_image=
         image, garment_id, category, max_working_long_side=max_working_long_side,
         mask_provider=width_mask_provider)
     if length_mask_provider is None or length_mask_provider is width_mask_provider:
+        length_working = working
         length_base_mask = base_mask
     else:
-        _, length_base_mask, _, _ = _component_mask(
+        length_working, length_base_mask, _, _ = _component_mask(
             image, garment_id, category, max_working_long_side=max_working_long_side,
             mask_provider=length_mask_provider)
     mask = _refine_mask_by_garment_color(working, base_mask, width_kind)
@@ -692,6 +728,14 @@ def measure_garment(image, garment_id=None, category=None, include_closet_image=
         raise ValueError('옷의 위아래 끝을 찾지 못했어요. 사진을 다시 찍어 주세요.')
     top = int(active_rows[0])
     bottom = int(active_rows[-1])
+    refined_bottom = refine_hem_bottom(length_working, length_base_mask, top, bottom)
+    if refined_bottom < bottom:
+        length_base_mask[refined_bottom + 1:] = 0
+        base_spans = row_spans(length_base_mask)
+        active_rows = np.flatnonzero(base_spans >= base_threshold)
+        if len(active_rows) >= height * .12:
+            top = int(active_rows[0])
+            bottom = int(active_rows[-1])
     garment_height = bottom - top
 
     spans = row_spans(mask)

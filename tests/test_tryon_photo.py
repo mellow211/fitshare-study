@@ -65,11 +65,28 @@ class TryOnApiTests(unittest.TestCase):
             with self.opener.open(self.base_url+'/api/garments/'+saved['id']+'/tryon-photo') as result:
                 self.assertEqual(result.status,200)
                 self.assertEqual(result.headers['Content-Type'],'image/png')
-                self.assertTrue(result.read().startswith(b'\x89PNG'))
+                self.assertTrue(result.read().startswith(bytes([137])+b'PNG'))
         self.assertEqual((folder/'garment.json').read_bytes(),before)
         with self.assertRaises(Exception) as error:
             self.opener.open(self.base_url+'/api/garments/missing/tryon-photo')
         self.assertEqual(error.exception.code,404)
+
+    def test_endpoint_uses_yolo_sam_cutout_and_falls_back_when_it_is_missing(self):
+        data='data:image/jpeg;base64,'+base64.b64encode(bytes([255,216,255])+b'sample').decode()
+        _,saved=self.request_json('/api/garments','POST',dict(name='Test shirt',category='top',garmentTypeId=1,gender='unisex',lengthCm=50,widthCm=40,colorName='파랑',photoDataUrl=data))
+        url=self.base_url+'/api/garments/'+saved['id']+'/tryon-photo'
+        with patch('server.ensure_garment_cutout', return_value=photo()) as cutout,              patch('tools.tryon_photo.original_tryon_source', side_effect=AssertionError('fallback must not run')):
+            with self.opener.open(url) as result:
+                self.assertTrue(result.read().startswith(bytes([137])+b'PNG'))
+            self.assertEqual(cutout.call_count, 1)
+        with patch('server.ensure_garment_cutout', side_effect=RuntimeError('SAM model missing')),              patch('tools.tryon_photo.original_tryon_source', return_value=photo()) as fallback:
+            with self.opener.open(url) as result:
+                self.assertTrue(result.read().startswith(bytes([137])+b'PNG'))
+            self.assertEqual(fallback.call_count, 1)
+        with patch('server.ensure_garment_cutout', side_effect=RuntimeError('SAM model missing')),              patch('tools.tryon_photo.original_tryon_source', side_effect=ValueError('옷 사진을 읽지 못했어요.')):
+            with self.assertRaises(Exception) as error:
+                self.opener.open(url)
+            self.assertEqual(error.exception.code,422)
 
     def test_original_photo_recovers_sleeves_missing_from_old_closet_png(self):
         from tests.test_tryon_segmentation import garment_case

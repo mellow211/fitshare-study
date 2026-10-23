@@ -10,18 +10,18 @@ function check(name, action) {
 check('정상: 저장한 두 벌의 이름·종류·기준값을 다시 폼에 채워요', () => {
   const draft = { id: 'current', stage: 'garment-input', garments: [
     { name: '체육복', category: 'pants', referenceLengthCm: '72', referenceWidthCm: '33' },
-    { name: '겉옷', category: 'top', referenceLengthCm: '55', referenceWidthCm: '44' }
+    { name: '겉옷', category: 'top', referenceLengthCm: '55', referenceWidthCm: '44', referenceCollarToHemCm: '49' }
   ] };
   const values = createGarmentInputValues(2, draft.garments);
-  if (values[0].name !== '체육복' || values[0].category !== 'pants' || values[0].length !== '72' || values[1].width !== '44') {
+  if (values[0].name !== '체육복' || values[0].category !== 'pants' || values[0].length !== '72' || values[1].width !== '44' || values[1].collarLength !== '49') {
     throw new Error('저장된 옷 입력값이 이어지지 않았어요.');
   }
 });
 
 check('경계: 숫자를 다 입력하지 않은 중간 상태도 그대로 저장해요', () => {
-  const form = { get: (name) => ({ 'name-0': '원피스', 'category-0': 'dress', 'length-0': '8', 'width-0': '' })[name] ?? null };
+  const form = { get: (name) => ({ 'name-0': '원피스', 'category-0': 'dress', 'length-0': '8', 'width-0': '', 'collarLength-0': '7' })[name] ?? null };
   const draft = readGarmentInputDraft(form, 1);
-  if (draft.stage !== 'garment-input' || draft.garments[0].length !== '8' || draft.garments[0].width !== '') {
+  if (draft.stage !== 'garment-input' || draft.garments[0].length !== '8' || draft.garments[0].width !== '' || draft.garments[0].collarLength !== '7') {
     throw new Error('입력 중인 값을 그대로 임시 저장하지 않았어요.');
   }
 });

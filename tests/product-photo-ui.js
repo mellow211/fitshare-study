@@ -1,4 +1,4 @@
-import { fetchMe } from '../js/auth.js?v=auth-2';
+import { fetchMe } from '../js/auth.js?v=auth-3';
 import { openGarmentDetail } from '../modules/garmentDetail.js';
 import { createGarmentCloset } from '../js/measurement/garmentCloset.js?v=closet-tools-6';
 

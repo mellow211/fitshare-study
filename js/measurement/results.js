@@ -1,4 +1,4 @@
-import { loadSession, getExperiment } from './store.js?v=server-storage-1';
+import { loadSession, getExperiment } from './store.js?v=legacy-session-fallback-1';
 import { makeOverlayMap, summarizeRecords } from './resultSummary.js?v=result-overlays-2';
 
 const root = document.querySelector('#results-app');
@@ -21,9 +21,17 @@ let garmentsById = new Map();
 let datasetImportedRound = false;
 let overlayByImageName = new Map();
 
-const sessionPromise = selectedRun
-  ? getExperiment(selectedRun)
-  : loadSession().then((saved) => saved?.serverId ? getExperiment(saved.serverId) : null);
+const sessionPromise = selectedRun === 'local'
+  ? loadSession()
+  : selectedRun
+    ? getExperiment(selectedRun).catch(async (error) => {
+      const saved = await loadSession().catch(() => null);
+      if (saved?.serverId === selectedRun) return saved;
+      throw error;
+    })
+    : loadSession().then((saved) => saved?.serverId
+      ? getExperiment(saved.serverId).catch(() => saved)
+      : saved);
 
 sessionPromise.then(async (saved) => {
   session = saved;
@@ -212,6 +220,7 @@ function renderPhotoCard(record) {
       <div class="dataset-values">
         <p><strong>${widthName}</strong><br />기준 ${displayCm(garment?.referenceWidthCm)} <span>→</span> 측정 ${displayCm(record.measuredWidthCm)}</p>
         <p><strong>기장</strong><br />기준 ${displayCm(garment?.referenceLengthCm)} <span>→</span> 측정 ${displayCm(record.measuredLengthCm)}</p>
+        ${Number.isFinite(Number(garment?.referenceCollarToHemCm)) ? `<p><strong>목점에서 밑단</strong><br />기준 ${displayCm(Number(garment.referenceCollarToHemCm))}</p>` : ''}
       </div>
     </div>
     <p class="dataset-error">너비 오차 ${signed(record.errorWidthCm)}cm · 기장 오차 ${signed(record.errorLengthCm)}cm</p>
@@ -236,13 +245,14 @@ function signed(value) { return Number.isFinite(value) ? `${value > 0 ? '+' : ''
 function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]); }
 
 function downloadCsv() {
-  const rows = [['옷 이름', '배경', '사진 파일', '너비 기준(cm)', '너비 측정(cm)', '너비 오차(cm)', '기장 기준(cm)', '기장 측정(cm)', '기장 오차(cm)']];
+  const rows = [['옷 이름', '배경', '사진 파일', '너비 기준(cm)', '너비 측정(cm)', '너비 오차(cm)', '기장 기준(cm)', '기장 측정(cm)', '기장 오차(cm)', '목점-밑단 기준(cm)']];
   for (const record of normalizedRecords()) {
     const garment = garmentsById.get(record.garmentId);
     rows.push([
       garmentName(record.garmentId), backgroundName(record.matId), record.imageName || '',
       garment?.referenceWidthCm, record.measuredWidthCm, record.errorWidthCm,
       garment?.referenceLengthCm, record.measuredLengthCm, record.errorLengthCm,
+      garment?.referenceCollarToHemCm,
     ]);
   }
   const csv = `\uFEFF${rows.map((row) => row.map((cell) => `"${String(cell ?? '').replaceAll('"', '""')}"`).join(',')).join('\r\n')}`;

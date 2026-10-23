@@ -52,8 +52,10 @@ class MeasurementProcessPageParser(HTMLParser):
 class MeasurementProcessPageTests(unittest.TestCase):
     def test_guide_is_reachable_from_the_published_docs_home(self):
         index = (PAGE.parent / 'index.html').read_text(encoding='utf-8')
+        research = (PAGE.parent / 'clothing-size-research.html').read_text(encoding='utf-8')
 
-        self.assertIn('href="measurement-process.html"', index)
+        self.assertIn('href="clothing-size-research.html"', index)
+        self.assertIn('href="measurement-process.html"', research)
         self.assertIn('id="ratio-example"', PAGE.read_text(encoding='utf-8'))
 
     def test_page_explains_the_full_flow_and_its_limits(self):

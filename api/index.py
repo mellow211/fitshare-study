@@ -34,7 +34,7 @@ SAFE_CHUNK_ID = re.compile(r'^[0-9a-f]{32}$')
 # POST 요청 중 저장 공간을 바꾸지 않는 것(사진 분석)은 쓰기 잠금 없이 처리합니다.
 READ_ONLY_POSTS = {('garments', 'analyze'), ('measurements', 'automatic')}
 # 사진 GET은 1초 안에 다시 확인했다면 동기화를 건너뛰어 Supabase 요청을 줄입니다.
-PHOTO_SUFFIXES = {'photo', 'closet-photo', 'tryon-photo', 'thumbnail', 'product-photo', 'photos'}
+PHOTO_SUFFIXES = {'photo', 'closet-photo', 'closet-thumbnail', 'tryon-photo', 'thumbnail', 'product-photo', 'photos'}
 # 데이터셋 실험은 사진 66MB와 긴 계산이 필요해 PC(server.py)에서만 다시 돌립니다. Vercel은 저장된 결과만 보여 줘요.
 LOCAL_ONLY_POSTS = {('measure-dataset', 'run'), ('measure-dataset', 'round3', 'run'),
                     ('measure-dataset', 'gemini'), ('measure-dataset', 'save-as-experiment')}

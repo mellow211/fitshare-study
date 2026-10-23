@@ -95,6 +95,24 @@ class ExperimentServerTests(unittest.TestCase):
             self.request_json('/api/experiments', 'POST', {'garments': [{'id': 'x', 'name': '', 'referenceLengthCm': 0}]})
         self.assertEqual(error.exception.code, 400)
 
+    def test_experiment_saves_optional_collar_to_hem_reference(self):
+        _, experiment = self.request_json('/api/experiments', 'POST', {
+            'garments': [{'id': 'garment-1', 'name': '상의', 'category': 'top',
+                          'referenceLengthCm': 50, 'referenceWidthCm': 40,
+                          'referenceCollarToHemCm': 46.5}]
+        })
+        _, detail = self.request_json(f"/api/experiments/{experiment['id']}")
+        self.assertEqual(detail['garments'][0]['referenceCollarToHemCm'], 46.5)
+
+    def test_invalid_optional_collar_to_hem_reference_is_rejected(self):
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.request_json('/api/experiments', 'POST', {
+                'garments': [{'id': 'garment-1', 'name': '상의', 'category': 'top',
+                              'referenceLengthCm': 50, 'referenceWidthCm': 40,
+                              'referenceCollarToHemCm': -1}]
+            })
+        self.assertEqual(error.exception.code, 400)
+
     def test_unknown_experiment_is_not_found(self):
         with self.assertRaises(urllib.error.HTTPError) as error:
             self.request_json('/api/experiments/00000000-0000-4000-8000-000000000000')

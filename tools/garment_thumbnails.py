@@ -6,9 +6,9 @@ from contextlib import nullcontext
 from pathlib import Path
 
 
-THUMBNAIL_VERSION = 2
+THUMBNAIL_VERSION = 3
 MAXIMUM_SIDE = 200
-GARMENT_MASK_PIPELINE_VERSION = 'round7-848-yolo-grabcut-v1'
+GARMENT_MASK_PIPELINE_VERSION = 'yolo-sam-vit-b-v3'
 
 
 def make_garment_thumbnail(png_bytes, maximum_side=MAXIMUM_SIDE):

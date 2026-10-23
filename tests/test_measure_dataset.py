@@ -1,8 +1,10 @@
 import unittest
 from pathlib import Path
 
+import numpy as np
+
 from tools.measure_dataset import analyze_dataset, measure_garment, read_dataset_label, rectify_photo
-from tools.vision_pipeline import _component_mask
+from tools.vision_pipeline import _component_mask, refine_hem_bottom
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,6 +50,26 @@ class DatasetLabelTests(unittest.TestCase):
 
 
 class DatasetVisionTests(unittest.TestCase):
+    def test_shadow_connected_below_hem_is_trimmed_when_edge_is_clear(self):
+        image = np.full((120, 80, 3), 220, dtype=np.uint8)
+        image[20:82, 15:65] = 30
+        image[82:89, 15:65] = 110
+        mask = np.zeros((120, 80), dtype=np.uint8)
+        mask[20:89, 15:65] = 1
+
+        hem = refine_hem_bottom(image, mask, top=20, bottom=88)
+
+        self.assertIn(hem, (81, 82))
+
+    def test_weak_hem_edge_keeps_the_original_endpoint(self):
+        image = np.full((120, 80, 3), 80, dtype=np.uint8)
+        mask = np.zeros((120, 80), dtype=np.uint8)
+        mask[20:89, 15:65] = 1
+
+        hem = refine_hem_bottom(image, mask, top=20, bottom=88)
+
+        self.assertEqual(hem, 88)
+
     def test_grabcut_keeps_seeded_garment_and_discards_calibration_mat(self):
         source = ROOT / 'measure_dataset' / 'cross' / 'c_5_w42_h90.jpg'
         flattened = rectify_photo(source, 'cross')

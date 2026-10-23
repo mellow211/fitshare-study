@@ -7,6 +7,7 @@ import math
 import os
 import re
 import shutil
+import ssl
 import threading
 import uuid
 from contextlib import nullcontext
@@ -17,8 +18,9 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 from tools.accounts import SESSION_SECONDS, AccountStore, AuthError
-from tools.garment_thumbnails import GARMENT_MASK_PIPELINE_VERSION
+from tools.garment_thumbnails import GARMENT_MASK_PIPELINE_VERSION, THUMBNAIL_VERSION
 from tools.garment_metadata import clean_metadata
+from tools.garment_size_estimation import estimate_korean_size
 from tools.clothing_wishes import clean_filters, new_wish, public_wish, valid_store
 
 
@@ -28,11 +30,45 @@ MAX_BODY_BYTES = 18 * 1024 * 1024
 MAX_PHOTO_BYTES = 12 * 1024 * 1024
 VALID_CATEGORIES = {'top', 'bottom', 'dress', 'pants', 'skirt', 'other'}
 VALID_GENDERS = {'male', 'female', 'unisex', 'unknown'}
-GARMENT_TYPE_NAMES = {1: '상의 외투', 2: '크롭 티셔츠', 3: '원피스', 4: '점퍼', 5: '바지'}
+GARMENT_TYPE_NAMES = {1: '상의 외투', 2: '티셔츠', 3: '원피스', 4: '점퍼', 5: '바지', 6: '치마', 7: '기타'}
+GARMENT_TYPE_CATEGORIES = {1: 'top', 2: 'top', 3: 'dress', 4: 'top', 5: 'pants', 6: 'skirt', 7: 'other'}
+GARMENT_TYPE_CODES = {1: 'o', 2: 't', 3: 'd', 4: 'j', 5: 'p', 6: 's', 7: 'e'}
+DEFAULT_SCHOOL_CODE = '나눔초등학교'
 VALID_MATS = {'M1', 'M2', 'M3', 'M4'}
 SAFE_GARMENT_ID = re.compile(r'^garment-[1-9][0-9]?$')
 SAFE_PHOTO_NAME = re.compile(r'^[A-Za-z0-9_-]{1,100}\.jpg$')
-PRODUCT_MASK_PIPELINE_VERSION = 'yolo-sam-vit-b-v1'
+PRODUCT_MASK_PIPELINE_VERSION = 'yolo-sam-vit-b-v3'
+LEGACY_GARMENT_MASK_PIPELINE_VERSION = 'round7-848-yolo-grabcut-v1'
+
+
+def clean_school_code(value):
+    if not isinstance(value, str):
+        value = DEFAULT_SCHOOL_CODE
+    cleaned = re.sub(r'[^A-Za-z0-9가-힣.-]', '-', value.strip())
+    cleaned = re.sub(r'-+', '-', cleaned).strip('-')[:30]
+    return cleaned or DEFAULT_SCHOOL_CODE
+
+
+def allocate_garment_code(item, sequences):
+    school_code = clean_school_code(item.get('schoolCode'))
+    type_code = GARMENT_TYPE_CODES.get(item.get('garmentTypeId'), 'e')
+    sequence_key = f'{school_code}|{type_code}'
+    try:
+        previous_number = int(sequences.get(sequence_key, 0))
+    except (TypeError, ValueError):
+        previous_number = 0
+    number = max(0, previous_number) + 1
+    sequences[sequence_key] = number
+    donor_id = item.get('donorId') or item.get('ownerUsername') or 'unknown'
+    donor_id = re.sub(r'[^\w가-힣.-]', '-', str(donor_id), flags=re.UNICODE)[:60] or 'unknown'
+    item.update({
+        'schoolCode': school_code,
+        'garmentTypeCode': type_code,
+        'garmentNumber': number,
+        'donorId': donor_id,
+        'garmentCode': f'{school_code}_{type_code}_{number:03d}_{donor_id}',
+    })
+    return item
 
 
 def owns_garment(user, garment):
@@ -192,28 +228,31 @@ def ensure_garment_cutout(garments_dir, garment_id, metadata_lock=None, *, for_p
     item = read_json(garment_dir / 'garment.json')
     if not item:
         raise FileNotFoundError('옷 사진을 찾지 못했어요.')
-    if not for_product_photo and item.get('closetPhotoSource') == 'provided-garment-only':
-        return cutout_path.read_bytes()
     try:
         if item.get(version_key) == version:
             return cutout_path.read_bytes()
     except OSError:
         pass
-    from tools.garment_segmentation import get_yolo_grabcut_provider, make_product_cutout
-    from tools.vision_pipeline import measure_garment, rectify_photo
+    from tools.garment_segmentation import make_product_cutout
+    from tools.vision_pipeline import rectify_photo
 
     source = (garment_dir / 'photo.jpg').read_bytes()
-    flattened = rectify_photo(source, item.get('backgroundId', 'M4'), preserve_resolution=True,
-                              max_output_long_side=848)
-    if not flattened.get('ok'):
-        raise ValueError(flattened.get('message', '옷 이미지를 만들지 못했어요.'))
-    if for_product_photo:
-        photo = make_product_cutout(flattened['image'], garment_id=item['garmentTypeId'])
+    if item.get('closetPhotoSource') == 'provided-garment-only':
+        import cv2
+        import numpy as np
+        image = cv2.imdecode(np.frombuffer(source, dtype=np.uint8), cv2.IMREAD_COLOR)
+        if image is None:
+            raise ValueError('원본 사진을 읽지 못했어요.')
     else:
-        measured = measure_garment(flattened['image'], garment_id=item['garmentTypeId'], include_closet_image=True,
-                                   scale_cm_per_pixel=flattened['scaleCmPerPixel'],
-                                   length_mask_provider=get_yolo_grabcut_provider(garment_id=item['garmentTypeId']))
-        photo = decode_png_data(measured.get('closetImageDataUrl'))
+        flattened = rectify_photo(source, item.get('backgroundId', 'M4'), preserve_resolution=True,
+                                  max_output_long_side=848)
+        if not flattened.get('ok'):
+            raise ValueError(flattened.get('message', '옷 이미지를 만들지 못했어요.'))
+        image = flattened['image']
+    category = item.get('category')
+    if category == 'pants' and item.get('bottomLength') in {'반바지', 'shorts'}:
+        category = 'shorts'
+    photo = make_product_cutout(image, garment_id=item.get('garmentTypeId'), category=category)
     if photo is None:
         raise ValueError('투명 옷장 사진을 만들지 못했어요.')
     write_bytes_safely(cutout_path, photo)
@@ -222,7 +261,19 @@ def ensure_garment_cutout(garments_dir, garment_id, metadata_lock=None, *, for_p
         if not latest:
             raise FileNotFoundError('옷 사진을 찾지 못했어요.')
         latest[version_key] = version
+        if not for_product_photo:
+            latest['thumbnailVersion'] = 0
         write_json_safely(garment_dir / 'garment.json', latest)
+        if not for_product_photo:
+            index_path = Path(garments_dir) / 'index.json'
+            index = read_json(index_path)
+            if isinstance(index, list):
+                for record in index:
+                    if isinstance(record, dict) and record.get('id') == garment_id:
+                        record['maskPipelineVersion'] = version
+                        record['thumbnailVersion'] = 0
+                        break
+                write_json_safely(index_path, index)
     return photo
 
 
@@ -233,23 +284,22 @@ def get_garment_thumbnail_bytes(garments_dir, garment_id, metadata_lock=None):
         raise FileNotFoundError('옷 사진을 찾지 못했어요.')
     thumbnail_path = garment_dir / 'closet-thumbnail.png'
     try:
-        if item.get('thumbnailVersion') == 2:
+        if (item.get('thumbnailVersion') == THUMBNAIL_VERSION
+                and item.get('maskPipelineVersion') == GARMENT_MASK_PIPELINE_VERSION):
             return thumbnail_path.read_bytes()
-        if item.get('maskPipelineVersion') != GARMENT_MASK_PIPELINE_VERSION:
-            raise FileNotFoundError('옷 분리 사진을 준비하는 중이에요.')
-        cutout = (garment_dir / 'closet.png').read_bytes()
+        cutout = ensure_garment_cutout(garments_dir, garment_id, metadata_lock)
         thumbnail = make_garment_thumbnail(cutout)
         write_bytes_safely(thumbnail_path, thumbnail)
         with metadata_lock if metadata_lock is not None else nullcontext():
             latest = read_json(garment_dir / 'garment.json') or {}
-            latest['thumbnailVersion'] = 2
+            latest['thumbnailVersion'] = THUMBNAIL_VERSION
             write_json_safely(garment_dir / 'garment.json', latest)
             index_path = Path(garments_dir) / 'index.json'
             index = read_json(index_path)
             if isinstance(index, list):
                 for record in index:
                     if isinstance(record, dict) and record.get('id') == garment_id:
-                        record['thumbnailVersion'] = 2
+                        record['thumbnailVersion'] = THUMBNAIL_VERSION
                         break
                 write_json_safely(index_path, index)
         return thumbnail
@@ -276,10 +326,33 @@ def get_product_thumbnail_bytes(garments_dir, garment_id):
     return thumbnail
 
 
-def create_server(host='0.0.0.0', port=8000, data_dir=DEFAULT_DATA_DIR):
-    """Create a testable HTTP server; tests can pass a temporary data directory."""
+def create_server(host='0.0.0.0', port=8000, data_dir=DEFAULT_DATA_DIR, tls_certfile=None, tls_keyfile=None, tls_port=None):
+    """Create optional local HTTPS listeners; Vercel uses the handler directly."""
+    if bool(tls_certfile) != bool(tls_keyfile):
+        raise ValueError('TLS certificate and key must both be supplied.')
+    tls_context = None
+    if tls_certfile:
+        tls_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        tls_context.load_cert_chain(certfile=str(tls_certfile), keyfile=str(tls_keyfile))
     handler_class = create_handler_class(data_dir)
     httpd = ThreadingHTTPServer((host, port), handler_class)
+    httpd.tls_server = None
+    try:
+        if tls_context is not None:
+            if tls_port is None:
+                raise ValueError('TLS port must be supplied when TLS certificate and key are supplied.')
+            tls_server = ThreadingHTTPServer((host, tls_port), handler_class)
+            try:
+                tls_server.socket = tls_context.wrap_socket(tls_server.socket, server_side=True)
+            except Exception:
+                tls_server.server_close()
+                raise
+            tls_server.garment_metadata_lock = handler_class.garment_metadata_lock
+            tls_server.product_generation_locks = handler_class.product_generation_locks
+            httpd.tls_server = tls_server
+    except Exception:
+        httpd.server_close()
+        raise
     httpd.garment_metadata_lock = handler_class.garment_metadata_lock
     httpd.product_generation_locks = handler_class.product_generation_locks
     return httpd
@@ -331,6 +404,8 @@ def create_handler_class(data_dir=DEFAULT_DATA_DIR):
                     return self.send_json(200, report)
                 if parts == ['auth', 'me']:
                     return self.send_json(200, {'user': self.current_user()})
+                if parts == ['demo-ca']:
+                    return self.get_demo_ca_certificate()
                 if parts == ['ranking']:
                     return self.get_ranking()
                 if parts == ['garments']:
@@ -345,6 +420,8 @@ def create_handler_class(data_dir=DEFAULT_DATA_DIR):
                     return self.get_garment_photo(parts[1])
                 if len(parts) == 3 and parts[0] == 'garments' and parts[2] == 'closet-photo':
                     return self.get_garment_closet_photo(parts[1])
+                if len(parts) == 3 and parts[0] == 'garments' and parts[2] == 'closet-thumbnail':
+                    return self.get_garment_closet_thumbnail(parts[1])
                 if len(parts) == 3 and parts[0] == 'garments' and parts[2] == 'tryon-photo':
                     return self.get_garment_tryon_photo(parts[1])
                 if len(parts) == 3 and parts[0] == 'garments' and parts[2] == 'thumbnail':
@@ -381,6 +458,8 @@ def create_handler_class(data_dir=DEFAULT_DATA_DIR):
                     return self.handle_auth(parts[1], payload)
                 if parts == ['ranking']:
                     return self.save_ranking(payload)
+                if parts == ['ranking', 'teacher-handoff']:
+                    return self.complete_teacher_handoff(payload)
                 if parts == ['garments', 'analyze']:
                     return self.analyze_garment(payload)
                 if parts == ['garments']:
@@ -410,6 +489,8 @@ def create_handler_class(data_dir=DEFAULT_DATA_DIR):
                     return self.handle_clothing_wishes('DELETE', parts[1])
                 if len(parts) == 2 and parts[0] == 'garments':
                     return self.delete_garment(parts[1])
+                if len(parts) == 3 and parts[0] == 'garments' and parts[2] == 'product-photo':
+                    return self.delete_product_photo(parts[1])
                 return self.send_json(404, {'error': '삭제할 API 주소가 없어요.'})
             except OSError:
                 return self.send_json(500, {'error': '옷 사진과 정보를 삭제하지 못했어요. 저장 공간 권한을 확인해 주세요.'})
@@ -460,6 +541,19 @@ def create_handler_class(data_dir=DEFAULT_DATA_DIR):
             if not path.startswith('/api/'):
                 return None
             return [unquote(part) for part in path.strip('/').split('/')[1:]]
+
+        def get_demo_ca_certificate(self):
+            path = storage / 'certs' / 'fitshare-demo-ca.crt'
+            if not path.is_file():
+                return self.send_json(404, {'error': '데모 HTTPS 인증서를 찾지 못했어요.'})
+            body = path.read_bytes()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/x-x509-ca-cert')
+            self.send_header('Content-Disposition', 'attachment; filename="fitshare-demo-ca.crt"')
+            self.send_header('Content-Length', str(len(body)))
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            self.wfile.write(body)
 
         def read_payload(self):
             try:
@@ -549,7 +643,7 @@ def create_handler_class(data_dir=DEFAULT_DATA_DIR):
             if not isinstance(background_id, str) or background_id not in VALID_MATS:
                 return self.send_json(400, {'error': '배경 종류를 골라 주세요.'})
             garment_id = payload.get('garmentId')
-            if isinstance(garment_id, bool) or garment_id not in GARMENT_TYPE_NAMES:
+            if isinstance(garment_id, bool) or garment_id not in GARMENT_TYPE_NAMES or garment_id == 7:
                 return self.send_json(400, {'error': '옷 종류를 먼저 골라 주세요.'})
             photo_bytes = decode_photo_data(payload.get('photoDataUrl'))
             if photo_bytes is None:
@@ -560,7 +654,8 @@ def create_handler_class(data_dir=DEFAULT_DATA_DIR):
                 from tools.vision_pipeline import image_to_data_url, measure_photo_with_fallback
 
                 analysis = measure_photo_with_fallback(
-                    photo_bytes, background_id, garment_id=garment_id, include_closet_image=True,
+                    photo_bytes, background_id, garment_id=garment_id,
+                    category=GARMENT_TYPE_CATEGORIES[garment_id], include_closet_image=True,
                     allow_fallback=False)
                 flattened = analysis['rectified']
                 measured = analysis['measurement']
@@ -574,7 +669,7 @@ def create_handler_class(data_dir=DEFAULT_DATA_DIR):
                 'ok': True,
                 'garmentId': garment_id,
                 'garmentName': GARMENT_TYPE_NAMES[garment_id],
-                'category': 'dress' if garment_id == 3 else 'pants' if garment_id == 5 else 'top',
+                'category': GARMENT_TYPE_CATEGORIES[garment_id],
                 'lengthCm': measured['measuredLengthCm'],
                 'widthCm': measured['measuredWidthCm'],
                 'widthKind': measured['widthKind'],
@@ -601,7 +696,8 @@ def create_handler_class(data_dir=DEFAULT_DATA_DIR):
             return self.send_json(200, {'rev': record.get('rev', 0), 'state': record['state']})
 
         def save_ranking(self, payload):
-            if self.current_user() is None:
+            user = self.current_user()
+            if user is None:
                 return self.send_json(401, {'error': '로그인한 뒤에 나눔 기록을 저장할 수 있어요.'})
             state = payload.get('state')
             base_rev = payload.get('baseRev')
@@ -615,11 +711,108 @@ def create_handler_class(data_dir=DEFAULT_DATA_DIR):
                     # 다른 사람이 먼저 저장했어요. 화면이 최신 기록을 받아 다시 시도합니다.
                     return self.send_json(409, {'error': '다른 친구가 먼저 저장했어요.', 'rev': current,
                                                 'state': record.get('state') if isinstance(record, dict) else None})
+                previous_state = record.get('state') if isinstance(record, dict) else None
+                if user.get('role') != 'teacher' and not self.student_can_confirm_own_handoff(previous_state, state, user):
+                    return self.send_json(403, {'error': '다른 친구의 나눔 완료는 선생님만 표시할 수 있어요.'})
                 write_json_safely(storage / 'ranking.json', {'rev': current + 1, 'state': state})
             return self.send_json(200, {'rev': current + 1})
 
+        @staticmethod
+        def student_can_confirm_own_handoff(previous_state, next_state, user):
+            if not isinstance(previous_state, dict):
+                return True
+            previous_exchanges = previous_state.get('exchanges', [])
+            next_exchanges = next_state.get('exchanges', [])
+            next_by_id = {item.get('id'): item for item in next_exchanges if isinstance(item, dict)}
+            previous_users = {item.get('id'): item.get('name') for item in previous_state.get('users', []) if isinstance(item, dict)}
+            for previous in previous_exchanges:
+                if not isinstance(previous, dict) or previous.get('status') != 'reserved':
+                    continue
+                updated = next_by_id.get(previous.get('id'))
+                if not updated or updated.get('status') != 'completed':
+                    continue
+                if any(updated.get(key) != previous.get(key) for key in ('giverId', 'receiverId', 'garmentId', 'itemName')):
+                    return False
+                if previous_users.get(previous.get('receiverId')) != user.get('name'):
+                    return False
+            return True
+
+        def complete_teacher_handoff(self, payload):
+            user = self.current_user()
+            if user is None:
+                return self.send_json(401, {'error': '선생님 계정으로 로그인해 주세요.'})
+            if user.get('role') != 'teacher':
+                return self.send_json(403, {'error': '선생님만 전달 완료를 표시할 수 있어요.'})
+            exchange_id = payload.get('exchangeId')
+            base_rev = payload.get('baseRev')
+            if not isinstance(exchange_id, str) or not exchange_id or isinstance(base_rev, bool) or not isinstance(base_rev, int):
+                return self.send_json(400, {'error': '완료할 예약 정보가 올바르지 않아요.'})
+            with lock:
+                record = read_json(storage / 'ranking.json')
+                current = record.get('rev', 0) if isinstance(record, dict) else 0
+                state = record.get('state') if isinstance(record, dict) else None
+                if base_rev != current:
+                    return self.send_json(409, {'error': '다른 친구가 먼저 기록했어요.', 'rev': current, 'state': state})
+                if not isinstance(state, dict) or not isinstance(state.get('exchanges'), list):
+                    return self.send_json(404, {'error': '나눔 예약을 찾을 수 없어요.'})
+                exchange = next((item for item in state['exchanges'] if isinstance(item, dict) and item.get('id') == exchange_id), None)
+                if exchange is None:
+                    return self.send_json(404, {'error': '나눔 예약을 찾을 수 없어요.'})
+                if exchange.get('status') != 'reserved':
+                    return self.send_json(409, {'error': '전달 대기 중인 예약만 완료로 표시할 수 있어요.'})
+                completed_at = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+                completed_exchange = {**exchange, 'status': 'completed', 'completedAt': completed_at}
+                next_state = {**state, 'exchanges': [completed_exchange if isinstance(item, dict) and item.get('id') == exchange_id else item
+                                                       for item in state['exchanges']]}
+                write_json_safely(storage / 'ranking.json', {'rev': current + 1, 'state': next_state})
+            return self.send_json(200, {'rev': current + 1, 'state': next_state})
+
+        def ensure_garment_codes(self, items):
+            sequence_path = garments_dir / '.sequences.json'
+            sequences = read_json(sequence_path)
+            if not isinstance(sequences, dict):
+                sequences = {}
+            changed = False
+            sequences_changed = not sequence_path.exists()
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                school_code = clean_school_code(item.get('schoolCode'))
+                type_code = GARMENT_TYPE_CODES.get(item.get('garmentTypeId'), 'e')
+                number = item.get('garmentNumber')
+                if isinstance(number, int) and not isinstance(number, bool) and number > 0:
+                    key = f'{school_code}|{type_code}'
+                    try:
+                        previous_number = int(sequences.get(key, 0))
+                    except (TypeError, ValueError):
+                        previous_number = 0
+                    if number > previous_number:
+                        sequences[key] = number
+                        sequences_changed = True
+            legacy = sorted(
+                ((index, item) for index, item in enumerate(items)
+                 if isinstance(item, dict) and not (isinstance(item.get('garmentNumber'), int)
+                                                    and isinstance(item.get('garmentCode'), str))),
+                key=lambda pair: (str(pair[1].get('createdAt', '')), pair[0]),
+            )
+            for _, item in legacy:
+                allocate_garment_code(item, sequences)
+                sequences_changed = True
+                item_path = garments_dir / str(item.get('id', '')) / 'garment.json'
+                if valid_garment_record_id(item.get('id')) and item_path.is_file():
+                    write_json_safely(item_path, item)
+                changed = True
+            if changed:
+                write_json_safely(garments_dir / 'index.json', items)
+            if sequences_changed:
+                write_json_safely(sequence_path, sequences)
+            return items
+
         def list_garments(self):
-            items = read_json(garments_dir / 'index.json') or []
+            with lock:
+                items = read_json(garments_dir / 'index.json') or []
+                if isinstance(items, list):
+                    items = self.ensure_garment_codes(items)
             return self.send_json(200, items if isinstance(items, list) else [])
 
         def get_garment(self, garment_id):
@@ -628,6 +821,11 @@ def create_handler_class(data_dir=DEFAULT_DATA_DIR):
             item = read_json(garments_dir / garment_id / 'garment.json')
             if not item:
                 return self.send_json(404, {'error': '등록한 옷을 찾지 못했어요.'})
+            with lock:
+                index = read_json(garments_dir / 'index.json') or []
+                if isinstance(index, list):
+                    self.ensure_garment_codes(index)
+                    item = read_json(garments_dir / garment_id / 'garment.json') or item
             return self.send_json(200, item)
 
         def get_garment_photo(self, garment_id):
@@ -657,7 +855,7 @@ def create_handler_class(data_dir=DEFAULT_DATA_DIR):
             self.send_response(200)
             self.send_header('Content-Type', 'image/png')
             self.send_header('Content-Length', str(len(photo)))
-            self.send_header('Cache-Control', 'public, max-age=3600')
+            self.send_header('Cache-Control', 'no-store')
             self.end_headers()
             self.wfile.write(photo)
 
@@ -671,8 +869,17 @@ def create_handler_class(data_dir=DEFAULT_DATA_DIR):
                 return self.send_json(422, {'error': '상의와 하의만 입어볼 수 있어요.'})
             try:
                 from tools.tryon_photo import make_tryon_photo, original_tryon_source
-                source = original_tryon_source(garments_dir / garment_id, item)
-                photo = make_tryon_photo(source, item.get('category'), item.get('bottomLength', ''))
+                photo = None
+                try:
+                    # 옷장·AI 상품 사진과 같은 YOLO+SAM 투명 컷아웃을 먼저 써요.
+                    cutout = ensure_garment_cutout(garments_dir, garment_id, lock)
+                    photo = make_tryon_photo(cutout, item.get('category'), item.get('bottomLength', ''))
+                except Exception as error:
+                    # 컷아웃이 없거나 YOLO·SAM 모델을 쓸 수 없으면 원본 사진에서 예전 방식으로 옷을 분리해요.
+                    self.log_error('YOLO+SAM try-on cutout unavailable for %s: %s', garment_id, error)
+                if photo is None:
+                    source = original_tryon_source(garments_dir / garment_id, item)
+                    photo = make_tryon_photo(source, item.get('category'), item.get('bottomLength', ''))
             except (OSError, ValueError, RuntimeError, ImportError) as error:
                 return self.send_json(422, {'error': str(error) or '입어보기용 사진을 준비하지 못했어요.'})
             self.send_response(200)
@@ -716,6 +923,23 @@ def create_handler_class(data_dir=DEFAULT_DATA_DIR):
             self.send_header('Content-Type', content_type)
             self.send_header('Content-Length', str(len(thumbnail)))
             self.send_header('Cache-Control', cache_control)
+            self.end_headers()
+            self.wfile.write(thumbnail)
+
+        def get_garment_closet_thumbnail(self, garment_id):
+            if not valid_garment_record_id(garment_id):
+                return self.send_json(404, {'error': '옷 사진을 찾지 못했어요.'})
+            try:
+                thumbnail = get_garment_thumbnail_bytes(garments_dir, garment_id, lock)
+            except FileNotFoundError:
+                return self.send_json(404, {'error': '옷 사진을 찾지 못했어요.'})
+            except (OSError, ValueError, RuntimeError, ImportError) as error:
+                self.log_error('YOLO+SAM closet thumbnail unavailable for %s: %s', garment_id, error)
+                return self.send_json(422, {'error': str(error) or '옷만 보기 썸네일을 만들지 못했어요.'})
+            self.send_response(200)
+            self.send_header('Content-Type', 'image/png')
+            self.send_header('Content-Length', str(len(thumbnail)))
+            self.send_header('Cache-Control', 'no-cache')
             self.end_headers()
             self.wfile.write(thumbnail)
 
@@ -799,14 +1023,14 @@ def create_handler_class(data_dir=DEFAULT_DATA_DIR):
                 from tools.replicate_product_photo import ProductPhotoError, generate_product_photo
 
                 source = ensure_garment_cutout(garments_dir, garment_id, lock, for_product_photo=True)
-                prompt = ('Create a clean ecommerce studio product photograph of this exact garment on a warm ivory background. '
-                          'Preserve the photographed garment identity, silhouette, color, fabric texture, print, logo, seams, '
-                          'buttons, flat laid-out pose, and proportions. Preserve only patterns and details actually visible in the source. '
-                          'Do not invent, add, repeat, or extend stripes, prints, logos, or decorations onto plain, hidden, or occluded areas. '
-                          'Do not copy body patterns onto sleeves or infer matching patterns on unseen parts. Keep plain fabric plain. '
-                          'Change only the background and lighting. '
-                          'Do not fold sleeves or change the pose. Do not add a person, mannequin, hanger, text, label, '
-                          'or other object.')
+                prompt = ('이 사진의 옷을 온라인 상점에 어울리는 깔끔한 스튜디오 상품 사진으로 만들어 주세요. '
+                          '배경은 선명하고 즐거운 무지개 그라데이션으로 만들고, 무지개 색이 옷의 색상이나 원단에 영향을 주지 않게 해 주세요. '
+                          '사진 속 옷의 종류와 실루엣, 색상, 원단 질감, 무늬, 로고, 봉제선, 단추, 펼쳐 놓은 자세와 비율을 그대로 보존해 주세요. '
+                          '무늬와 장식은 원본 사진에서 실제로 보이는 것만 유지해 주세요. '
+                          '민무늬인 부분이나 숨겨지거나 가려진 부분에 줄무늬, 무늬, 로고 또는 장식을 새로 만들거나 복사하거나 이어 그리지 마세요. '
+                          '몸판의 무늬를 소매에 복사하지 말고, 보이지 않는 부분의 무늬를 추측하지 마세요. 민무늬 원단은 민무늬로 유지해 주세요. '
+                          '옷 자체는 바꾸지 말고 배경과 조명만 바꿔 주세요. 소매를 접거나 옷의 자세를 바꾸지 마세요. '
+                          '사람, 마네킹, 옷걸이, 글자, 라벨, 보노보노 캐릭터 또는 다른 물체를 추가하지 마세요.')
                 photo, mime = generate_product_photo(source, prompt, token, model_version)
             except ProductPhotoError as error:
                 return self.send_json(502, {'error': str(error)})
@@ -883,7 +1107,7 @@ def create_handler_class(data_dir=DEFAULT_DATA_DIR):
             if not isinstance(requested_owner, str) or len(requested_owner.strip()) > 200:
                 return self.send_json(400, {'error': '올린 사람 이름은 200글자까지 쓸 수 있어요.'})
             owner_name = item.get('ownerName', '')
-            expected_category = 'dress' if garment_type_id == 3 else 'pants' if garment_type_id == 5 else 'top'
+            expected_category = GARMENT_TYPE_CATEGORIES.get(garment_type_id)
             if (not isinstance(name, str) or not name.strip() or len(name.strip()) > 60
                     or category != expected_category or category not in VALID_CATEGORIES
                     or not isinstance(gender, str) or gender not in VALID_GENDERS
@@ -908,17 +1132,26 @@ def create_handler_class(data_dir=DEFAULT_DATA_DIR):
                 latest = read_json(item_path)
                 if not isinstance(latest, dict):
                     return self.send_json(404, {'error': '수정할 옷을 찾지 못했어요.'})
+                garment_index = read_json(garments_dir / 'index.json') or []
+                if not isinstance(garment_index, list):
+                    garment_index = []
+                self.ensure_garment_codes(garment_index)
+                latest = read_json(item_path)
                 try:
                     metadata_update = clean_metadata(payload, latest)
                 except ValueError:
                     return self.send_json(409, {'error': '다른 곳에서 옷 정보가 변경됐어요. 목록을 새로고침한 뒤 다시 수정해 주세요.'})
+                type_changed = latest.get('garmentTypeId') != updated['garmentTypeId']
                 for key in ('name', 'category', 'gender', 'garmentTypeId', 'colorName', 'lengthCm',
                             'widthCm', 'garmentTypeName', 'photoUrl', 'closetPhotoUrl'):
                     latest[key] = updated[key]
                 latest.update(metadata_update)
+                if type_changed:
+                    sequences = read_json(garments_dir / '.sequences.json') or {}
+                    allocate_garment_code(latest, sequences)
+                    write_json_safely(garments_dir / '.sequences.json', sequences)
                 updated = latest
                 write_json_safely(item_path, updated)
-                garment_index = read_json(garments_dir / 'index.json') or []
                 list_item = {key: value for key, value in updated.items() if key != 'photoUrl'}
                 for position, old in enumerate(garment_index):
                     if old.get('id') == garment_id:
@@ -929,12 +1162,54 @@ def create_handler_class(data_dir=DEFAULT_DATA_DIR):
                 write_json_safely(garments_dir / 'index.json', garment_index)
             return self.send_json(200, updated)
 
+        def delete_product_photo(self, garment_id):
+            user = self.current_user()
+            if user is None:
+                return self.send_json(401, {'error': '로그인해 주세요.'})
+            if user.get('role') != 'teacher':
+                return self.send_json(403, {'error': '선생님만 AI 상품 사진을 삭제할 수 있어요.'})
+            if not valid_garment_record_id(garment_id):
+                return self.send_json(404, {'error': '옷 사진을 찾지 못했어요.'})
+            with product_generation_locks_guard:
+                generation_lock = product_generation_locks.setdefault(garment_id, threading.Lock())
+            if not generation_lock.acquire(blocking=False):
+                return self.send_json(409, {'error': 'AI 사진을 만들고 있어 지금은 삭제할 수 없어요. 잠시 뒤 다시 시도해 주세요.'})
+            try:
+                garment_dir = garments_dir / garment_id
+                item_path = garment_dir / 'garment.json'
+                index_path = garments_dir / 'index.json'
+                keys = ('productPhotoFile', 'productPhotoUrl', 'productPhotoGeneratedAt')
+                with lock:
+                    item = read_json(item_path)
+                    if not isinstance(item, dict):
+                        return self.send_json(404, {'error': '등록된 옷을 찾지 못했어요.'})
+                    if not item.get('productPhotoFile'):
+                        return self.send_json(404, {'error': '삭제할 AI 상품 사진이 없어요.'})
+                    for key in keys:
+                        item.pop(key, None)
+                    write_json_safely(item_path, item)
+                    index = read_json(index_path)
+                    if isinstance(index, list):
+                        for record in index:
+                            if isinstance(record, dict) and record.get('id') == garment_id:
+                                for key in keys:
+                                    record.pop(key, None)
+                                break
+                        write_json_safely(index_path, index)
+                    # 기록을 먼저 지운 뒤 파일을 지워서, 중간에 실패해도 깨진 링크가 남지 않게 해요.
+                    for name in ('product-photo.png', 'product-photo.jpg', 'product-photo.webp', 'product-thumbnail.jpg'):
+                        (garment_dir / name).unlink(missing_ok=True)
+            except OSError:
+                return self.send_json(500, {'error': 'AI 상품 사진을 삭제하지 못했어요. 저장 공간 권한을 확인해 주세요.'})
+            finally:
+                generation_lock.release()
+            return self.send_json(200, {'deleted': True})
+
         def delete_garment(self, garment_id):
             user = self.current_user()
             if user is None:
                 return self.send_json(401, {'error': '로그인한 뒤 옷을 삭제할 수 있어요.'})
-            if user.get('role') != 'teacher':
-                return self.send_json(403, {'error': '선생님만 등록된 옷을 삭제할 수 있어요.'})
+            is_teacher = user.get('role') == 'teacher'
             if not valid_garment_record_id(garment_id):
                 return self.send_json(404, {'error': '삭제할 옷을 찾지 못했어요.'})
 
@@ -946,11 +1221,27 @@ def create_handler_class(data_dir=DEFAULT_DATA_DIR):
             try:
                 garment_dir = garments_dir / garment_id
                 item_path = garment_dir / 'garment.json'
-                if not isinstance(read_json(item_path), dict):
+                garment = read_json(item_path)
+                if not isinstance(garment, dict):
                     return self.send_json(404, {'error': '삭제할 옷을 찾지 못했어요.'})
+                if not is_teacher and not owns_garment(user, garment):
+                    return self.send_json(403, {'error': '본인이 올린 옷만 삭제할 수 있어요.'})
 
                 index_path = garments_dir / 'index.json'
                 with lock:
+                    if not is_teacher:
+                        ranking_path = storage / 'ranking.json'
+                        ranking = read_json(ranking_path)
+                        if ranking is None and ranking_path.exists():
+                            return self.send_json(500, {'error': '나눔 신청 기록을 확인하지 못해 옷을 삭제할 수 없어요.'})
+                        if ranking is not None:
+                            state = ranking.get('state') if isinstance(ranking, dict) else None
+                            exchanges = state.get('exchanges') if isinstance(state, dict) else None
+                            if not isinstance(exchanges, list):
+                                return self.send_json(500, {'error': '나눔 신청 기록을 확인하지 못해 옷을 삭제할 수 없어요.'})
+                            if any(isinstance(exchange, dict) and exchange.get('garmentId') == garment_id
+                                   for exchange in exchanges):
+                                return self.send_json(409, {'error': '다른 친구가 나눔을 신청했던 옷은 삭제할 수 없어요.'})
                     index = read_json(index_path)
                     if index is None and index_path.exists():
                         return self.send_json(500, {'error': '옷 목록을 읽지 못해 삭제할 수 없어요.'})
@@ -989,6 +1280,7 @@ def create_handler_class(data_dir=DEFAULT_DATA_DIR):
             photo_bytes = decode_photo_data(payload.get('photoDataUrl'))
             closet_image = decode_png_data(payload.get('closetImageDataUrl'))
             background_id = payload.get('backgroundId', 'M4')
+            school_code = clean_school_code(payload.get('schoolCode'))
             owner_name = payload.get('ownerName', '')
             measurement_method = payload.get('measurementMethod', 'provided')
             if not isinstance(measurement_method, str) or measurement_method not in {'manual','photo-analysis','provided'}:
@@ -1003,6 +1295,7 @@ def create_handler_class(data_dir=DEFAULT_DATA_DIR):
             if not isinstance(owner_name, str) or len(owner_name.strip()) > 200:
                 return self.send_json(400, {'error': '올린 사람 이름은 200글자까지 쓸 수 있어요.'})
             if (not isinstance(name, str) or not name.strip() or len(name.strip()) > 60
+                    or category != GARMENT_TYPE_CATEGORIES.get(garment_type_id)
                     or category not in VALID_CATEGORIES or gender not in VALID_GENDERS
                     or isinstance(garment_type_id, bool) or garment_type_id not in GARMENT_TYPE_NAMES
                     or not isinstance(color_name, str) or not color_name.strip() or len(color_name) > 30
@@ -1027,17 +1320,29 @@ def create_handler_class(data_dir=DEFAULT_DATA_DIR):
                 'id': record_id, 'name': name.strip(), 'category': category, 'gender': gender,
                 'garmentTypeId': garment_type_id,
                 'garmentTypeName': GARMENT_TYPE_NAMES[garment_type_id],
+                'schoolCode': school_code,
                 'ownerName': owner_name.strip(),
                 'colorName': color_name.strip(), 'lengthCm': round(float(length), 1),
                 'widthCm': round(float(width), 1), 'createdAt': created_at,
                 'photoUrl': f'/api/garments/{record_id}/photo',
                 'closetPhotoUrl': f'/api/garments/{record_id}/closet-photo',
                 'backgroundId': background_id,
-                'maskPipelineVersion': GARMENT_MASK_PIPELINE_VERSION,
-                'thumbnailVersion': 2 if thumbnail is not None else 0,
+                'maskPipelineVersion': LEGACY_GARMENT_MASK_PIPELINE_VERSION if closet_image is not None else '',
+                'thumbnailVersion': 0,
             }
+            size_category = 'shorts' if category == 'pants' and item.get('bottomLength') == '반바지' else category
+            if not item.get('size') and size_category in {'top', 'dress', 'pants', 'skirt', 'shorts'}:
+                try:
+                    item['size'] = estimate_korean_size(size_category, item['widthCm'], item['lengthCm'])
+                except ValueError:
+                    pass
+                else:
+                    metadata_sources = dict(item.get('metadataSources') or {})
+                    metadata_sources['size'] = 'measurement-rule'
+                    item['metadataSources'] = metadata_sources
             if user is not None:
                 item['ownerUsername'] = user['username']
+                item['donorId'] = user['username']
             temporary_dir = garments_dir / f'.tmp-{record_id}'
             final_dir = garments_dir / record_id
             try:
@@ -1046,12 +1351,18 @@ def create_handler_class(data_dir=DEFAULT_DATA_DIR):
                 if closet_image is not None:
                     (temporary_dir / 'closet.png').write_bytes(closet_image)
                     (temporary_dir / 'closet-thumbnail.png').write_bytes(thumbnail)
-                write_json_safely(temporary_dir / 'garment.json', item)
                 with lock:
-                    temporary_dir.replace(final_dir)
                     index = read_json(garments_dir / 'index.json') or []
+                    if not isinstance(index, list):
+                        index = []
+                    self.ensure_garment_codes(index)
+                    sequences = read_json(garments_dir / '.sequences.json') or {}
+                    allocate_garment_code(item, sequences)
+                    write_json_safely(temporary_dir / 'garment.json', item)
+                    temporary_dir.replace(final_dir)
                     index.insert(0, {key: value for key, value in item.items() if key != 'photoUrl'})
                     write_json_safely(garments_dir / 'index.json', index)
+                    write_json_safely(garments_dir / '.sequences.json', sequences)
             except OSError:
                 shutil.rmtree(temporary_dir, ignore_errors=True)
                 return self.send_json(500, {'error': '옷 사진을 저장하지 못했어요. 서버 저장 공간을 확인해 주세요.'})
@@ -1351,11 +1662,16 @@ def create_handler_class(data_dir=DEFAULT_DATA_DIR):
                 category = garment.get('category', 'other')
                 length = garment.get('referenceLengthCm')
                 width = garment.get('referenceWidthCm')
+                collar_length = garment.get('referenceCollarToHemCm')
                 if (not SAFE_GARMENT_ID.fullmatch(str(garment.get('id', ''))) or not name
-                        or category not in VALID_CATEGORIES or not valid_measurement(length) or not valid_measurement(width)):
+                        or category not in VALID_CATEGORIES or not valid_measurement(length) or not valid_measurement(width)
+                        or (collar_length is not None and not valid_measurement(collar_length))):
                     return self.send_json(400, {'error': '옷 이름, 종류, 줄자 기준 크기를 확인해 주세요.'})
-                clean_garments.append({'id': garment['id'], 'name': name, 'category': category,
-                                       'referenceLengthCm': float(length), 'referenceWidthCm': float(width)})
+                clean_garment = {'id': garment['id'], 'name': name, 'category': category,
+                                 'referenceLengthCm': float(length), 'referenceWidthCm': float(width)}
+                if collar_length is not None:
+                    clean_garment['referenceCollarToHemCm'] = float(collar_length)
+                clean_garments.append(clean_garment)
             with lock:
                 rounds = []
                 if experiments_dir.exists():
@@ -1442,7 +1758,11 @@ def main():
     host = os.environ.get('FITSHARE_HOST', '0.0.0.0')
     port = int(os.environ.get('PORT', '8000'))
     storage = Path(os.environ.get('FITSHARE_DATA_DIR', str(DEFAULT_DATA_DIR)))
-    httpd = create_server(host, port, storage)
+    tls_certfile = os.environ.get('FITSHARE_TLS_CERT_FILE') or None
+    tls_keyfile = os.environ.get('FITSHARE_TLS_KEY_FILE') or None
+    tls_port = int(os.environ.get('FITSHARE_TLS_PORT', '8443')) if tls_certfile and tls_keyfile else None
+    httpd = create_server(host, port, storage, tls_certfile=tls_certfile,
+                          tls_keyfile=tls_keyfile, tls_port=tls_port)
     from tools.garment_thumbnails import prepare_garment_thumbnails
 
     def prepare_saved_thumbnails():
@@ -1455,13 +1775,21 @@ def main():
             return
 
     threading.Thread(target=prepare_saved_thumbnails, name='garment-thumbnail-warmup', daemon=True).start()
-    print(f'FitShare is running: http://{host}:{httpd.server_address[1]}/')
+    print(f'FitShare HTTP is running: http://{host}:{httpd.server_address[1]}/')
+    if httpd.tls_server is not None:
+        tls_thread = threading.Thread(target=httpd.tls_server.serve_forever,
+                                      name='fitshare-https', daemon=True)
+        tls_thread.start()
+        print(f'FitShare HTTPS is running: https://{host}:{httpd.tls_server.server_address[1]}/')
     print(f'Experiment photos and results are saved in: {storage.resolve()}')
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
         print('\nFitShare server stopped.')
     finally:
+        if httpd.tls_server is not None:
+            httpd.tls_server.shutdown()
+            httpd.tls_server.server_close()
         httpd.server_close()
 
 

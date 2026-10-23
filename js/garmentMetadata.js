@@ -22,6 +22,7 @@ export function suggestGarmentMetadata({name='',garmentTypeId,category}={}) {
   const kind=types.find(([pattern])=>pattern.test(text));
   if(kind)set('garmentKind',kind[1]);
   else if(Number(garmentTypeId)===5)set('garmentKind','바지','type-rule');
+  else if(category==='skirt'||Number(garmentTypeId)===6)set('garmentKind','치마','type-rule');
   else if(Number(garmentTypeId)===4)set('garmentKind','점퍼','type-rule');
   else if(Number(garmentTypeId)===3)set('garmentKind','원피스','type-rule');
   else if(Number(garmentTypeId)===2)set('garmentKind','티셔츠','type-rule');
