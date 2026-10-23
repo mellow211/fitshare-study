@@ -118,3 +118,63 @@ button { cursor:pointer; }
 .tryon-note { font-size: 14px; color: #62748c; }
 .virtual-tryon :focus-visible { outline: 3px solid #4c7bdf; outline-offset: 3px; }
 @media (max-width: 500px) { .virtual-tryon { padding: 14px; } .tryon-header h3 { font-size: 18px; } .tryon-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Landing showcase: a compact ranking preview beside vertically stacked clothing picks. */
+.hero { grid-template-columns:minmax(0,1fr) minmax(0,1.05fr); gap:clamp(18px,3vw,38px); }
+.hero-art { display:grid; grid-template-columns:minmax(0,.88fr) minmax(0,1.12fr); align-items:center; gap:12px; height:340px; }
+.hero-preview-link { display:block; min-width:0; border-radius:22px; color:inherit; text-decoration:none; }
+.hero-preview-link:focus-visible { outline:3px solid #edaa32; outline-offset:4px; }
+.hero-ranking-preview,.hero-garment-preview { position:relative; min-width:0; padding:16px 14px; border:1px solid #ffffffd9; border-radius:22px; background:#ffffffed; box-shadow:0 22px 48px #40547d26; }
+.hero-ranking-preview { z-index:1; transform:rotate(-3deg) translateY(8px); }
+.hero-garment-preview { z-index:2; transform:rotate(2deg) translateY(-5px); }
+.hero-preview-heading { display:flex; align-items:center; gap:9px; }
+.hero-preview-icon { display:grid; place-items:center; flex:none; width:36px; height:36px; border-radius:12px; background:#fff2c9; font-size:19px; }
+.hero-preview-heading p { margin:0 0 2px; color:#71809a; font-size:8px; font-weight:900; letter-spacing:1.2px; }
+.hero-preview-heading h2 { margin:0; color:#263b5a; font:16px 'Jua'; white-space:nowrap; }
+.hero-rank-list { display:grid; gap:7px; margin:16px 0 12px; padding:0; list-style:none; }
+.hero-rank-list li { display:grid; grid-template-columns:23px 29px minmax(0,1fr) auto; align-items:center; gap:5px; min-width:0; padding:7px 6px; border:1px solid #edf0f5; border-radius:12px; background:#fbfcff; }
+.hero-rank-list li.is-first { border-color:#f3dda0; background:linear-gradient(110deg,#fff8e5,#fff); }
+.hero-rank-place { display:grid; place-items:center; width:22px; height:22px; border-radius:8px; color:#5d6c85; background:#edf1f7; font-size:11px; font-weight:900; }
+.hero-rank-list .is-first .hero-rank-place { color:#875d00; background:#ffe6a1; }
+.hero-rank-face { display:grid; place-items:center; width:28px; height:28px; border-radius:50%; background:#f1f5fc; font-size:16px; }
+.hero-rank-list li > span:nth-child(3),.hero-garment-copy { display:flex; flex-direction:column; min-width:0; gap:2px; }
+.hero-rank-list strong,.hero-garment-copy strong { overflow:hidden; color:#33445f; font-size:10px; text-overflow:ellipsis; white-space:nowrap; }
+.hero-rank-list small,.hero-garment-copy small { overflow:hidden; color:#8390a3; font-size:8px; text-overflow:ellipsis; white-space:nowrap; }
+.hero-rank-list li > b { color:#6e7f9b; font-size:8px; white-space:nowrap; }
+.hero-rank-list .is-first > b { color:#b58114; }
+.hero-preview-note { display:block; color:#9aa5b5; font-size:8px; text-align:right; }
+.hero-garment-heading { display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:10px; }
+.hero-garment-heading > span { color:#263b5a; font:16px 'Jua'; }
+.hero-garment-heading > b { padding:5px 7px; border-radius:999px; color:#387b65; background:#e7f7ef; font-size:7px; letter-spacing:.6px; }
+.hero-garment-list { display:grid; gap:8px; }
+.hero-garment-item { display:flex; align-items:center; gap:7px; min-width:0; padding:7px 6px; border:1px solid #edf0f5; border-radius:13px; background:#fff; }
+.hero-garment-art { display:grid; place-items:center; flex:none; width:43px; height:51px; border-radius:10px; font-size:24px; }
+.hero-garment-art img { width:100%; height:100%; border-radius:inherit; object-fit:cover; }
+.hero-garment-art.is-blue { background:linear-gradient(145deg,#dceeff,#eef6ff); }
+.hero-garment-art.is-lilac { background:linear-gradient(145deg,#eee5ff,#f8f4ff); }
+.hero-garment-art.is-peach { background:linear-gradient(145deg,#ffe5d9,#fff4ed); }
+.hero-pick-mark { flex:none; padding:4px 5px; border-radius:999px; color:#347960; background:#e9f7ef; font-size:7px; font-weight:900; }
+.app-shell.is-entered .hero { min-height:380px; }
+.app-shell.is-entered .hero-art { display:grid; height:340px; margin:0; }
+@media(max-width:900px) {
+  .hero { grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; padding-right:4%; padding-left:4%; }
+  .hero-art { grid-template-columns:minmax(0,.88fr) minmax(0,1.12fr); gap:8px; }
+  .hero-ranking-preview,.hero-garment-preview { padding:13px 10px; }
+  .hero-rank-list li { grid-template-columns:21px 25px minmax(0,1fr); gap:4px; }
+  .hero-rank-list li > b { display:none; }
+  .hero-garment-art { width:37px; height:46px; }
+}
+@media(max-width:700px) {
+  .hero { grid-template-columns:1fr; gap:12px; }
+  .hero-art,.app-shell.is-entered .hero-art { grid-template-columns:1fr; height:auto; min-height:0; gap:11px; margin-top:12px; }
+  .hero-ranking-preview,.hero-garment-preview { transform:none; padding:15px; }
+  .hero-rank-list { grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; margin:12px 0 8px; }
+  .hero-rank-list li { grid-template-columns:22px minmax(0,1fr); gap:5px; padding:8px 6px; }
+  .hero-rank-face { display:none; }
+  .hero-rank-list li > span:nth-child(3) { grid-column:2; }
+  .hero-rank-list li > b { display:block; grid-column:2; justify-self:start; }
+  .hero-rank-list strong { font-size:9px; }
+  .hero-rank-list small { display:none; }
+  .hero-garment-list { grid-template-columns:1fr; }
+  .app-shell.is-entered .hero { min-height:0; }
+}

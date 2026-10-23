@@ -10,7 +10,7 @@ CHOICES = {
     'pattern': {'무지','줄무늬','체크','프린트','기타'},
 }
 SEASONS = {'봄','여름','가을','겨울'}
-SOURCES = {'manual','name-rule','type-rule','demo'}
+SOURCES = {'manual','name-rule','type-rule','demo','measurement-rule'}
 
 
 def clean_metadata(payload, current=None):

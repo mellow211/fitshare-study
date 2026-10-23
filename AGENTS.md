@@ -65,11 +65,12 @@ AI가 임의로 핵심 로직을 바꾸지 않는다.
 - 학생이 자기 말로 로직을 설명할 수 있다.
 - `git diff`를 확인한 뒤 commit/push 한다.
 
-## 8. Superpowers 스킬 사용 규칙
+## 8. Superlite 스킬 사용 규칙
 
-- 전역 Superpowers 스킬 경로: `C:\Users\ttaho\.agents\skills\superpowers\skills`
-- 작업을 시작하기 전에, 요청과 맞는 스킬의 `SKILL.md`를 먼저 확인한다.
-- 스킬의 절차는 따르되, 이 문서(AGENTS.md)의 프로젝트 규칙이 항상 우선이다.
+- 전역 Codex 플러그인 `superlite@superlite-dev`를 사용한다. 스킬은 `%CODEX_HOME%\plugins\cache\superlite-dev\superlite\<version>\skills`에서 확인한다.
+- 작업을 시작할 때 이 요청에 맞는 Superlite `SKILL.md`와 `using-superlite\references\codex-tools.md`를 먼저 확인한다.
+- Superpowers는 기본 워크플로로 사용하지 않는다. Superlite가 없거나 실행되지 않으면 임의로 Superpowers로 대체하지 말고 이유를 알린다.
+- Superlite 절차를 따르되, 이 문서(AGENTS.md)의 프로젝트 규칙이 항상 우선이다.
 - 이 프로젝트에서는 과한 자동화보다 "학생이 제시한 로직을 구현" 원칙을 우선한다.
 - 스킬 적용 후에도 변경 범위는 최소화하고, 담당 모듈 경계를 지킨다.
 
@@ -82,7 +83,7 @@ AI가 임의로 핵심 로직을 바꾸지 않는다.
 ## 10. 이미지 분할(세그멘테이션) 규칙
 
 - 옷 등록의 실측: 너비는 GrabCut, 기장은 YOLO→GrabCut으로 마스크를 만든다. (`tools/vision_pipeline.py`의 `measure_garment`, 기장용은 `get_yolo_grabcut_provider`)
-- AI 상품 이미지 생성: SAM + YOLO로 옷을 오려낸다. YOLO가 옷 상자를 찾고 SAM이 그 상자 안을 분리한다. (`tools/garment_segmentation.py`의 `make_product_cutout`)
+- 옷장 `옷만 보기` 이미지와 AI 상품 이미지 생성은 같은 YOLO + SAM 분할을 쓴다. YOLO가 옷 영역을 찾고 SAM 후보 마스크 중 YOLO와 겹치는 영역을 비교해 옷을 투명 배경으로 분리한다. (`tools/garment_segmentation.py`의 `make_product_cutout`; 결과 버전은 `yolo-sam-vit-b-v3`)
   - Vercel에는 PyTorch가 들어가지 않아, 같은 YOLO 상자를 Replicate의 SAM(`tools/replicate_sam.py`)에 보내 분리한다. 로컬 `server.py`는 기존처럼 PC의 SAM을 쓴다.
 - 두 용도의 분할 방식을 서로 섞지 않는다. 바꿔야 하면 먼저 이유를 설명하고 이 규칙도 함께 고친다.
 - 가상 입어보기 표시용 분할은 원본 사진의 YOLO 마스크와 가장자리 연결 배경을 함께 사용하고, 복잡한 배경에서는 소매 보호 씨앗 GrabCut으로 보정한다. 이 코드는 `tools/tryon_segmentation.py`에 분리하며 등록 실측·AI 상품 사진의 알고리즘과 저장 결과를 변경하지 않는다.

@@ -95,8 +95,10 @@ def _preprocess(image, input_size=416):
 def _category_classes(garment_id=None, category=None):
     if garment_id == 3 or category == 'dress':
         return {9, 10, 11, 12}
+    if category == 'shorts':
+        return {6}
     if garment_id == 5:
-        return {7}
+        return {6, 7}
     if category in {'pants', 'bottom', 'skirt'}:
         return {6, 7, 8}
     if category == 'other':
@@ -215,11 +217,34 @@ def make_product_cutout(image, garment_id=None, category=None, *, detector=None,
     rows, columns = np.nonzero(yolo_mask)
     # 두 바짓가랑이처럼 나뉜 영역도 모두 포함하는 상자를 SAM에 알려 줘요.
     box = np.array([columns.min(), rows.min(), columns.max(), rows.max()], dtype=np.float32)
+    # YOLO 마스크가 몸통만 잡고 소매를 빠뜨려도, YOLO 상자는 소매까지 포함하므로 둘을 합친 상자를 SAM에 알려 줘요.
+    detected_box = detection.get('box')
+    if detected_box is not None:
+        height, width = image.shape[:2]
+        left, top, right, bottom = (float(value) for value in detected_box)
+        box = np.array([min(box[0], max(0, left)), min(box[1], max(0, top)),
+                        max(box[2], min(width - 1, right)), max(box[3], min(height - 1, bottom))], dtype=np.float32)
     predictor = predictor if predictor is not None else _load_sam_predictor()
     with _sam_inference_lock:
         predictor.set_image(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-        masks, _, _ = predictor.predict(box=box, multimask_output=False)
-    mask = np.asarray(masks[0]) > 0
+        masks, scores, _ = predictor.predict(box=box, multimask_output=True)
+    candidates = np.asarray(masks) > 0
+    scores = np.asarray(scores).reshape(-1)
+    valid = []
+    for index, candidate in enumerate(candidates):
+        if candidate.shape != image.shape[:2] or not candidate.any():
+            continue
+        intersection = np.logical_and(candidate, yolo_mask).sum()
+        union = np.logical_or(candidate, yolo_mask).sum()
+        overlap = float(intersection / union) if union else 0.0
+        valid.append((overlap, float(scores[index]) if index < len(scores) else 0.0, candidate))
+    if not valid:
+        raise ValueError('SAM did not return a usable clothing mask.')
+    consistent = [entry for entry in valid if entry[0] >= 0.5]
+    overlap, _, mask = max(consistent or valid,
+                           key=(lambda entry: (entry[1], entry[0])) if consistent else (lambda entry: (entry[0], entry[1])))
+    if overlap < 0.2:
+        raise ValueError('SAM mask did not overlap the detected garment.')
     if mask.shape != image.shape[:2] or not mask.any():
         raise ValueError('SAM이 옷 영역을 찾지 못했어요. 원본 사진을 확인해 주세요.')
     alpha = mask.astype(np.uint8) * 255

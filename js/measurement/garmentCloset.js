@@ -1,15 +1,19 @@
 // 메인 화면과 등록 화면이 같은 옷 카드, 페이지 나누기, 정보 수정 기능을 씁니다.
-import { getUser } from '../auth.js?v=auth-2';
-import { createGarmentMetadataFields } from '../garmentMetadata.js';
+import { getUser } from '../auth.js?v=auth-3';
+import { createGarmentMetadataFields } from '../garmentMetadata.js?v=skirt-1';
 import { openVirtualTryOn } from '../virtualTryOn/index.js';
+import { getGarmentExchange } from '../../modules/rankingLogic.js';
+import { loadState, pullState, subscribe } from '../../modules/rankingStore.js';
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 12;
 const GARMENT_TYPES = [
   { id: 1, name: '상의 외투' },
-  { id: 2, name: '크롭 티셔츠' },
+  { id: 2, name: '티셔츠' },
   { id: 3, name: '원피스' },
   { id: 4, name: '점퍼' },
-  { id: 5, name: '바지' }
+  { id: 5, name: '바지' },
+  { id: 6, name: '치마' },
+  { id: 7, name: '기타' }
 ];
 const GENDER_OPTIONS = [
   { id: 'unknown', name: '모름' },
@@ -19,20 +23,63 @@ const GENDER_OPTIONS = [
 ];
 
 // onOpen 을 주면 옷 카드를 눌렀을 때 그 옷의 상세 창을 열어요. (주지 않으면 예전처럼 동작)
-export function createGarmentCloset({ list, status, pagination, onOpen }) {
+export function createGarmentCloset({ list, status, pagination, filterControls = null, onOpen }) {
   let garments = [];
   let currentPage = 0;
+  let activeFilter = 'all';
+  let sharingState = loadState();
 
-  async function reload() {
+  const availableFilterButton = filterControls?.querySelector('[data-closet-filter="available"]');
+  const allFilterButton = filterControls?.querySelector('[data-closet-filter="all"]');
+  const updateFilterButtons = () => {
+    availableFilterButton?.setAttribute('aria-pressed', String(activeFilter === 'available'));
+    allFilterButton?.setAttribute('aria-pressed', String(activeFilter === 'all'));
+  };
+  availableFilterButton?.addEventListener('click', () => {
+    activeFilter = 'available';
+    currentPage = 0;
+    updateFilterButtons();
+    render();
+  });
+  allFilterButton?.addEventListener('click', () => {
+    activeFilter = 'all';
+    currentPage = 0;
+    updateFilterButtons();
+    render();
+  });
+  updateFilterButtons();
+
+  subscribe(() => {
+    sharingState = loadState();
+    if (activeFilter === 'available') render();
+    else updateShareStatuses();
+  });
+
+  async function reload(prioritizeId = null) {
     status.textContent = '옷 목록을 불러오고 있어요.';
     list.replaceChildren();
     pagination.replaceChildren();
     try {
-      const response = await fetch('/api/garments');
+      const [response] = await Promise.all([fetch('/api/garments'), pullState()]);
       const result = await response.json().catch(() => []);
       if (!response.ok) throw new Error(result.error || '옷 목록을 불러오지 못했어요.');
-      garments = Array.isArray(result) ? result : [];
-      currentPage = Math.min(currentPage, Math.max(0, Math.ceil(garments.length / PAGE_SIZE) - 1));
+      garments = (Array.isArray(result) ? result : [])
+        .map((garment, index) => ({ garment, index, createdAt: Date.parse(garment.createdAt) }))
+        .sort((a, b) => {
+          if (prioritizeId && a.garment.id === prioritizeId) return -1;
+          if (prioritizeId && b.garment.id === prioritizeId) return 1;
+          const aValid = Number.isFinite(a.createdAt);
+          const bValid = Number.isFinite(b.createdAt);
+          if (aValid && bValid && a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
+          if (aValid !== bValid) return aValid ? -1 : 1;
+          return a.index - b.index;
+        })
+        .map(({ garment }) => garment);
+      sharingState = loadState();
+      const visibleGarments = getVisibleGarments();
+      currentPage = prioritizeId
+        ? 0
+        : Math.min(currentPage, Math.max(0, Math.ceil(visibleGarments.length / PAGE_SIZE) - 1));
       render();
     } catch (error) {
       status.textContent = error.message || '옷장 서버에 연결하지 못했어요.';
@@ -46,23 +93,52 @@ export function createGarmentCloset({ list, status, pagination, onOpen }) {
       pagination.replaceChildren();
       return;
     }
-    const pageCount = Math.ceil(garments.length / PAGE_SIZE);
+    const visibleGarments = getVisibleGarments();
+    if (!visibleGarments.length) {
+      status.textContent = '현재 나눔 가능한 옷이 없어요. 모두 보기에서 전체 옷을 확인해 보세요.';
+      pagination.replaceChildren();
+      return;
+    }
+    const pageCount = Math.ceil(visibleGarments.length / PAGE_SIZE);
     const firstIndex = currentPage * PAGE_SIZE;
-    const visible = garments.slice(firstIndex, firstIndex + PAGE_SIZE);
-    status.textContent = `옷 ${garments.length}벌 중 ${firstIndex + 1}~${firstIndex + visible.length}벌을 보고 있어요.`;
+    const visible = visibleGarments.slice(firstIndex, firstIndex + PAGE_SIZE);
+    status.textContent = activeFilter === 'available'
+      ? `나눔 가능한 옷 ${visibleGarments.length}벌 중 ${firstIndex + 1}~${firstIndex + visible.length}번째를 보고 있어요.`
+      : `옷 ${garments.length}벌 중 ${firstIndex + 1}~${firstIndex + visible.length}번째를 보고 있어요.`;
     for (const garment of visible) list.append(createCard(garment));
     renderPagination(pageCount);
+  }
+
+  function getVisibleGarments() {
+    return activeFilter === 'available'
+      ? garments.filter(garment => getShareStatus(garment).key === 'available')
+      : garments;
   }
 
   function createCard(garment) {
     const card = document.createElement('article');
     card.className = 'school-closet-card';
+    card.dataset.garmentId = garment.id;
+    const openDetails = () => onOpen?.(garment, reload, {
+      hasExchangeHistory: sharingState.exchanges.some(item => item.garmentId === garment.id),
+      exchange: getGarmentExchange(sharingState, garment.id),
+      users: sharingState.users
+    });
     const image = document.createElement('img');
     image.alt = `${garment.name} 사진`;
     image.loading = 'lazy';
     image.decoding = 'async';
     image.width = 200;
     image.height = 200;
+    let imageAction = null;
+    if (typeof onOpen === 'function') {
+      imageAction = document.createElement('button');
+      imageAction.type = 'button';
+      imageAction.className = 'closet-photo-open';
+      imageAction.setAttribute('aria-label', `${garment.name} 상세 보기`);
+      imageAction.addEventListener('click', openDetails);
+      imageAction.append(image);
+    }
     let showingOriginal = false;
     const togglePhoto = document.createElement('button');
     togglePhoto.type = 'button';
@@ -72,7 +148,7 @@ export function createGarmentCloset({ list, status, pagination, onOpen }) {
     function showCleanPhoto() {
       const id = encodeURIComponent(garment.id);
       const choices = [
-        `/api/garments/${id}/thumbnail?v=image-priority-1`,
+        `/api/garments/${id}/thumbnail?v=product-yolo-priority-3&g=${encodeURIComponent(garment.productPhotoGeneratedAt || 'none')}`,
         `/api/garments/${id}/closet-photo`,
         `/api/garments/${id}/photo`
       ];
@@ -96,18 +172,38 @@ export function createGarmentCloset({ list, status, pagination, onOpen }) {
 
     const title = document.createElement('strong');
     title.textContent = garment.name;
+    const itemCode = document.createElement('span');
+    itemCode.className = 'closet-item-code';
+    itemCode.textContent = garment.garmentTypeCode && garment.garmentNumber
+      ? `${garment.garmentTypeCode}_${String(garment.garmentNumber).padStart(3, '0')}` : '번호 확인 중';
+    const shareStatus = document.createElement('span');
+    shareStatus.className = 'closet-share-status';
+    shareStatus.dataset.garmentStatus = '';
     const kind = document.createElement('p');
     kind.textContent = garment.garmentTypeName || garment.category || '옷';
     const missing = [!garment.size, !(garment.seasons?.length||garment.season), !garment.style, !garment.condition].filter(Boolean).length;
     if(missing)kind.textContent+=` · 추천 정보 ${missing}개 미등록`;
     const size = document.createElement('p');
     size.textContent = `길이 ${garment.lengthCm}cm · 너비 ${garment.widthCm}cm`;
+    size.className = 'closet-measurement-summary';
+    const savedSize = String(garment.size ?? '').trim();
+    const estimatedSize = document.createElement('p');
+    estimatedSize.className = 'closet-estimated-size';
+    estimatedSize.textContent = `추정 호수 ${/^\d{2,3}$/.test(savedSize) ? savedSize : '미등록'}`;
     const actions = document.createElement('div');
     actions.className = 'closet-card-actions';
+    if (typeof onOpen === 'function') {
+      const openDetail = document.createElement('button');
+      openDetail.type = 'button';
+      openDetail.className = 'closet-open-action';
+      openDetail.dataset.closetOpen = garment.id;
+      openDetail.addEventListener('click', openDetails);
+      actions.append(openDetail);
+    }
     if (['top', 'pants'].includes(garment.category)) {
       const tryOn = document.createElement('button');
       tryOn.type = 'button';
-      tryOn.className = 'closet-tryon-action';
+      tryOn.className = 'closet-secondary-action closet-tryon-action';
       tryOn.dataset.closetTryon = garment.id;
       tryOn.textContent = '가상으로 입어보기';
       tryOn.setAttribute('aria-label', `${garment.name} 가상으로 입어보기`);
@@ -128,17 +224,42 @@ export function createGarmentCloset({ list, status, pagination, onOpen }) {
       edit.addEventListener('click', () => openEditDialog(garment));
       actions.append(edit);
     }
-    card.append(image, title, kind, size, actions);
-    if (typeof onOpen === 'function') {
-      card.classList.add('is-openable');
-      card.tabIndex = 0;
-      card.setAttribute('role', 'button');
-      card.setAttribute('aria-label', `${garment.name} 자세히 보기`);
-      const open = (event) => { if (!event.target.closest('.closet-card-actions')) onOpen(garment, reload); };
-      card.addEventListener('click', open);
-      card.addEventListener('keydown', (event) => { if ((event.key === 'Enter' || event.key === ' ') && event.target === card) { event.preventDefault(); onOpen(garment, reload); } });
+    card.append(imageAction || image, shareStatus);
+    if (garment.isDemo) {
+      const demoBadge = document.createElement('span');
+      demoBadge.className = 'closet-demo-badge';
+      demoBadge.textContent = '가상 옷';
+      demoBadge.setAttribute('aria-label', '데모용 가상 옷');
+      card.append(demoBadge);
     }
+    card.append(itemCode, title, kind, size, estimatedSize, actions);
+    updateShareStatus(garment, shareStatus, actions.querySelector('[data-closet-open]'));
     return card;
+  }
+
+  function getShareStatus(garment) {
+    const exchange = getGarmentExchange(sharingState, garment.id);
+    if (exchange?.status === 'reserved') return { key: 'reserved', label: '🟡 예약 중', action: '예약 정보 보기' };
+    if (exchange?.status === 'completed') return { key: 'completed', label: '⚪ 나눔 완료', action: '나눔 기록 보기' };
+    if (!garment.ownerName) return { key: 'needs-owner', label: '⚪ 정보 필요', action: '옷 정보 확인' };
+    return { key: 'available', label: '🟢 나눔 가능', action: '나눔 예약하기' };
+  }
+
+  function updateShareStatus(garment, badge, action) {
+    const shareStatus = getShareStatus(garment);
+    badge.className = `closet-share-status is-${shareStatus.key}`;
+    badge.dataset.garmentStatus = shareStatus.key;
+    badge.textContent = shareStatus.label;
+    badge.setAttribute('aria-label', `나눔 상태: ${shareStatus.label.replace(/^\S+\s/, '')}`);
+    if (action) action.textContent = shareStatus.action;
+  }
+
+  function updateShareStatuses() {
+    for (const card of list.querySelectorAll('.school-closet-card')) {
+      const garment = garments.find((item) => item.id === card.dataset.garmentId);
+      const badge = card.querySelector('[data-garment-status]');
+      if (garment && badge) updateShareStatus(garment, badge, card.querySelector('[data-closet-open]'));
+    }
   }
 
   function renderPagination(pageCount) {
@@ -179,7 +300,8 @@ export function createGarmentCloset({ list, status, pagination, onOpen }) {
     const metadataBox = document.createElement('section');
     const metadataFields = createGarmentMetadataFields(metadataBox, garment);
     fields.append(metadataBox);
-    const suggest = () => metadataFields.suggest({name:name.value,garmentTypeId:Number(type.value),category:Number(type.value)===5?'pants':Number(type.value)===3?'dress':'top'});
+    const categoryForType = id => id === 3 ? 'dress' : id === 5 ? 'pants' : id === 6 ? 'skirt' : id === 7 ? 'other' : 'top';
+    const suggest = () => metadataFields.suggest({name:name.value,garmentTypeId:Number(type.value),category:categoryForType(Number(type.value))});
     name.addEventListener('input', suggest);
     type.addEventListener('change', suggest);
     suggest();
@@ -213,7 +335,7 @@ export function createGarmentCloset({ list, status, pagination, onOpen }) {
       const payload = {
         ...metadataFields.read(),
         name: name.value.trim(), garmentTypeId,
-        category: garmentTypeId === 3 ? 'dress' : garmentTypeId === 5 ? 'pants' : 'top',
+        category: categoryForType(garmentTypeId),
         gender: gender.value, colorName: color.value.trim(),
         lengthCm: Number(length.value), widthCm: Number(width.value)
       };

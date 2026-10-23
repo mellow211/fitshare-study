@@ -74,8 +74,9 @@ function renderGarments(count, savedGarments = [], savedMatOrder = defaultMatOrd
             <label class="garment-kind">옷 종류<select name="category-${index}">${[
               ['top', '상의·외투'], ['bottom', '하의'], ['dress', '원피스'], ['pants', '바지'], ['skirt', '치마'], ['other', '기타']
             ].map(([value, label]) => `<option value="${value}"${garment.category === value ? ' selected' : ''}>${label}</option>`).join('')}</select></label>
-            <label>길이(cm)<input name="length-${index}" type="number" min="1" max="300" step="0.1" placeholder="예: 55" value="${escapeHtml(garment.length)}" required></label>
+            <label class="length-label"><span>기장(cm)</span><input name="length-${index}" type="number" min="1" max="300" step="0.1" placeholder="예: 55" value="${escapeHtml(garment.length)}" required></label>
             <label>너비(cm)<input name="width-${index}" type="number" min="1" max="300" step="0.1" placeholder="예: 42" value="${escapeHtml(garment.width)}" required></label>
+            <label class="collar-length-field"${['top', 'dress'].includes(garment.category) ? '' : ' hidden'}>목점에서 밑단까지(cm)<input name="collarLength-${index}" type="number" min="1" max="300" step="0.1" placeholder="예: 50" value="${escapeHtml(garment.collarLength)}"${['top', 'dress'].includes(garment.category) ? ' required' : ''}><small>목 가장 높은 점에서 옷 밑단까지 재요.</small></label>
             <div class="garment-input-guide" data-guide-index="${index}"></div>
           </article>`).join('')}</div>
         <section class="mat-order-picker" aria-labelledby="mat-order-title">
@@ -84,6 +85,7 @@ function renderGarments(count, savedGarments = [], savedMatOrder = defaultMatOrd
           <ol id="mat-order-list" class="mat-order-list"></ol>
         </section>
         <p class="analysis-note">길이와 너비는 줄자로 잰 기준값이에요. 자동 사진 인식이 어려우면 촬영 뒤 직접 확인하고 고칠 수 있어요.</p>
+        <p class="analysis-note">상의·원피스는 어깨와 목이 만나는 점에서 밑단까지도 재요. 바지 너비는 허리 고무줄 아래 5cm 지점에서 재요.</p>
         <p id="garment-save-status" class="analysis-note" role="status">입력 내용은 이 기기에 임시 저장돼요.</p>
         <div class="button-row"><button type="button" class="quiet-action" data-action="save-and-leave">저장하고 나중에 계속하기</button><button class="primary-action" type="submit">${matOrder[0]} 촬영 시작</button></div>
       </form>
@@ -109,6 +111,12 @@ function renderGarments(count, savedGarments = [], savedMatOrder = defaultMatOrd
   const updateGuide = (card, index) => {
     const category = card.querySelector('.garment-kind select').value;
     card.querySelector('.garment-input-guide').innerHTML = renderGarmentInputGuide(category, index);
+    const collarField = card.querySelector('.collar-length-field');
+    const collarInput = collarField.querySelector('input');
+    const needsCollarLength = category === 'top' || category === 'dress';
+    card.querySelector('.length-label span').textContent = needsCollarLength ? '어깨·목 만나는 점에서 밑단(cm)' : '기장(cm)';
+    collarField.hidden = !needsCollarLength;
+    collarInput.required = needsCollarLength;
   };
   app.querySelectorAll('.garment-card').forEach((card, index) => updateGuide(card, index));
   formElement.addEventListener('input', () => queueGarmentDraftSave(formElement, count, false, matOrder));
@@ -127,9 +135,11 @@ function renderGarments(count, savedGarments = [], savedMatOrder = defaultMatOrd
       name: garment.name.trim(),
       category: garment.category,
       referenceLengthCm: Number(garment.length),
-      referenceWidthCm: Number(garment.width)
+      referenceWidthCm: Number(garment.width),
+      ...(garment.category === 'top' || garment.category === 'dress'
+        ? { referenceCollarToHemCm: Number(garment.collarLength) } : {})
     }));
-    if (garments.some((garment) => !garment.name || !Number.isFinite(garment.referenceLengthCm) || garment.referenceLengthCm <= 0 || !Number.isFinite(garment.referenceWidthCm) || garment.referenceWidthCm <= 0)) {
+    if (garments.some((garment) => !garment.name || !Number.isFinite(garment.referenceLengthCm) || garment.referenceLengthCm <= 0 || !Number.isFinite(garment.referenceWidthCm) || garment.referenceWidthCm <= 0 || ('referenceCollarToHemCm' in garment && (!Number.isFinite(garment.referenceCollarToHemCm) || garment.referenceCollarToHemCm <= 0)))) {
       return renderGarmentsWithError(count, '이름과 기준 크기를 모두 적어 주세요. 길이와 너비는 0보다 커야 해요.', inputDraft.garments, inputDraft.matOrder);
     }
     try {

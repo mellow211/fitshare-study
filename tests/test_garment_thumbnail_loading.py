@@ -85,6 +85,41 @@ class GarmentThumbnailLoadingTests(unittest.TestCase):
                     httpd.server_close()
                     thread.join(timeout=2)
 
+    def test_closet_thumbnail_endpoint_uses_yolo_sam_cutout_before_product_photo(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            garment_id = str(uuid.uuid4())
+            folder = root / 'garments' / garment_id
+            folder.mkdir(parents=True)
+            _, original = cv2.imencode('.jpg', np.full((240, 160, 3), (220, 30, 20), dtype=np.uint8))
+            _, product = cv2.imencode('.jpg', np.full((240, 160, 3), (10, 20, 230), dtype=np.uint8))
+            cutout = np.zeros((240, 160, 4), dtype=np.uint8)
+            cutout[20:220, 30:130] = (20, 210, 30, 255)
+            _, closet = cv2.imencode('.png', cutout)
+            (folder / 'photo.jpg').write_bytes(original.tobytes())
+            (folder / 'product-photo.jpg').write_bytes(product.tobytes())
+            (folder / 'closet.png').write_bytes(closet.tobytes())
+            (folder / 'garment.json').write_text(json.dumps({
+                'id': garment_id,
+                'maskPipelineVersion': server.GARMENT_MASK_PIPELINE_VERSION,
+                'productPhotoFile': 'product-photo.jpg',
+            }), encoding='utf-8')
+            httpd = server.create_server('127.0.0.1', 0, root)
+            thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+            thread.start()
+            try:
+                url = f'http://127.0.0.1:{httpd.server_address[1]}/api/garments/{garment_id}/closet-thumbnail'
+                with urllib.request.urlopen(url, timeout=5) as response:
+                    self.assertEqual(response.headers.get_content_type(), 'image/png')
+                    image = cv2.imdecode(np.frombuffer(response.read(), dtype=np.uint8), cv2.IMREAD_UNCHANGED)
+                    self.assertEqual(image.shape[2], 4)
+                    self.assertEqual(int(image[:, :, 3].min()), 0)
+                    np.testing.assert_allclose(image[50, 50, :3], (20, 210, 30), atol=3)
+            finally:
+                httpd.shutdown()
+                httpd.server_close()
+                thread.join(timeout=2)
+
     def test_thumbnail_reports_invalid_original_when_no_usable_image_exists(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -136,7 +171,7 @@ class GarmentThumbnailLoadingTests(unittest.TestCase):
             image = cv2.imdecode(np.frombuffer(output, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
             self.assertLessEqual(max(image.shape[:2]), 200)
             updated = json.loads((garment_dir / 'garment.json').read_text(encoding='utf-8'))
-            self.assertEqual(updated['thumbnailVersion'], 2)
+            self.assertEqual(updated['thumbnailVersion'], server.THUMBNAIL_VERSION)
 
     def test_prepare_creates_missing_thumbnail_from_current_cutout(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -5,8 +5,8 @@
 <link rel="stylesheet" href="/css/styles.css">
 <main><h1>옷장 가상 입어보기 연결 검사</h1><div id="fixture"></div><pre id="result">RUNNING</pre></main>
 <script type="module">
-import { fetchMe } from '../js/auth.js?v=auth-2';
-import { createGarmentCloset } from '../js/measurement/garmentCloset.js?v=closet-tools-6';
+import { fetchMe } from '../js/auth.js?v=auth-3';
+import { createGarmentCloset } from '../js/measurement/garmentCloset.js?v=closet-tools-19';
 import { openGarmentDetail } from '../modules/garmentDetail.js';
 import { closeVirtualTryOn } from '../js/virtualTryOn/index.js';
 
@@ -30,7 +30,7 @@ const storageKeys = ['fitshare.ranking.v1', 'fitshare.ranking.viewer', 'fitshare
 const oldStorage = storageKeys.map(key => localStorage.getItem(key));
 const requests = [];
 const unexpected = [];
-let cameraCalls = 0, opened = 0, deletedId = '', brokenPhotoId = '', delayedId = '', finishDelayed;
+let cameraCalls = 0, opened = 0, openedOptions = null, deletedId = '', brokenPhotoId = '', delayedId = '', finishDelayed, rankingFailure = false;
 const records = [
   { id: 'closet-top', name: '옷장 줄무늬 상의', category: 'top', garmentTypeId: 2 },
   { id: 'closet-pants/한글', name: '옷장 파랑 바지', category: 'pants', garmentTypeId: 5 },
@@ -38,6 +38,11 @@ const records = [
   ...Array.from({length: 9}, (_, index) => ({id: 'closet-extra-' + index, name: '추가 상의 ' + index, category: 'top', garmentTypeId: 2}))
 ].map(item => ({...item, gender: 'unisex', size: '140', season: '봄', colorName: '파랑', lengthCm: 45,
   widthCm: 32, ownerName: '옷장 테스트', ownerUsername: 'closet-tester'}));
+const rankingState = {version: 1, users: [{id: 'giver', name: '옷장 테스트'}, {id: 'receiver', name: '받는 친구'}], exchanges: [
+  {id: 'reserved-top', giverId: 'giver', receiverId: 'receiver', garmentId: records[0].id, status: 'reserved'},
+  {id: 'completed-pants', giverId: 'giver', receiverId: 'receiver', garmentId: records[1].id, itemName: records[1].name, status: 'completed', giverToReceiver: 8, receiverToGiver: 9, revealedAt: '2026-10-22T00:00:00Z'}
+], badges: [], finalizedMonths: []};
+records[3].ownerName = '';
 const image = document.createElement('canvas');
 image.width = 180; image.height = 240;
 const ctx = image.getContext('2d');
@@ -47,15 +52,19 @@ let fixture, list, pagination, closet;
 
 function makeCloset() {
   fixture = document.createElement('section');
+  const filterControls = document.createElement('div');
+  filterControls.innerHTML = '<button type="button" data-closet-filter="available">나눔 가능한 옷만 보기</button><button type="button" data-closet-filter="all">모두 보기</button>';
   list = document.createElement('div');
   const status = document.createElement('p');
   pagination = document.createElement('nav');
-  fixture.append(status, list, pagination);
+  fixture.append(filterControls, status, list, pagination);
   document.querySelector('#fixture').append(fixture);
-  closet = createGarmentCloset({list, status, pagination, onOpen: () => { opened += 1; }});
+  closet = createGarmentCloset({list, status, pagination, filterControls, onOpen: (_garment, _reload, options) => { opened += 1; openedOptions = options; }});
 }
 const tryOn = () => document.querySelector('dialog.virtual-tryon');
 const cardButton = id => [...list.querySelectorAll('[data-closet-tryon]')].find(button => button.dataset.closetTryon === id);
+const detailButton = id => [...list.querySelectorAll('[data-closet-open]')].find(button => button.dataset.closetOpen === id);
+const statusBadge = id => [...list.querySelectorAll('[data-garment-status]')].find(badge => badge.closest('.school-closet-card')?.dataset.garmentId === id);
 const detail = () => document.querySelector('dialog.garment-detail');
 async function ready(name) {
   await wait(() => tryOn() && !tryOn().querySelector('[data-start]').disabled, name || '옷 사진 준비 실패');
@@ -77,7 +86,7 @@ try {
     requests.push({url, method, signal: options.signal});
     if (method !== 'GET') { unexpected.push(method + ' ' + url); throw Error('허용되지 않은 저장 요청: ' + url); }
     if (url === '/api/auth/me') return json({user: {username: 'closet-tester', name: '옷장 테스트', role: 'student'}});
-    if (url === '/api/ranking') return json({rev: 0, state: null});
+    if (url === '/api/ranking') return rankingFailure ? json({error: '랭킹 서버 연결 실패'}, 503) : json({rev: 1, state: rankingState});
     if (url === '/api/garments') return json(records);
     for (const record of records) {
       const endpoint = '/api/garments/' + encodeURIComponent(record.id);
@@ -97,6 +106,22 @@ try {
   makeCloset();
   await closet.reload();
   check(list.children.length === 10, '기존 옷장 페이지당 10벌 표시 유지');
+  check(statusBadge(records[0].id)?.dataset.garmentStatus === 'reserved' && statusBadge(records[0].id)?.textContent.includes('예약 중'), '예약 상태를 카드에서 표시');
+  check(statusBadge(records[1].id)?.dataset.garmentStatus === 'completed' && statusBadge(records[1].id)?.textContent.includes('나눔 완료'), '완료 상태를 카드에서 표시');
+  check(statusBadge(records[2].id)?.dataset.garmentStatus === 'available' && statusBadge(records[2].id)?.textContent.includes('나눔 가능'), '기록 없는 옷을 나눔 가능으로 표시');
+  check(statusBadge(records[3].id)?.dataset.garmentStatus === 'needs-owner' && statusBadge(records[3].id)?.textContent.includes('정보 필요'), '올린 사람 정보가 없으면 예약 가능으로 잘못 표시하지 않음');
+  check(detailButton(records[2].id)?.textContent.includes('나눔 예약') && detailButton(records[2].id)?.type === 'button', '카드에 상세·나눔 예약 버튼 표시');
+  const availableFilter = fixture.querySelector('[data-closet-filter="available"]');
+  const allFilter = fixture.querySelector('[data-closet-filter="all"]');
+  availableFilter.click();
+  check(list.children.length === 9 && [...list.querySelectorAll('[data-garment-status]')].every(badge => badge.dataset.garmentStatus === 'available'), '나눔 가능한 옷만 보기는 예약·완료·올린 사람 정보 없는 옷을 제외');
+  check(availableFilter.getAttribute('aria-pressed') === 'true' && status.textContent.includes('9벌'), '나눔 가능 필터 선택과 결과 개수 표시');
+  allFilter.click();
+  check(list.children.length === 12 && allFilter.getAttribute('aria-pressed') === 'true', '모두 보기로 전체 옷 복원');
+  rankingFailure = true;
+  await closet.reload();
+  check(statusBadge(records[0].id)?.dataset.garmentStatus === 'reserved', '랭킹 API 실패 때 저장된 나눔 상태를 유지');
+  rankingFailure = false;
   check(cardButton(records[0].id)?.classList.contains('closet-tryon-action'), '상의 카드에 입어보기 버튼 표시');
   check(Boolean(cardButton(records[1].id)), '하의 카드에 입어보기 버튼 표시');
   check(!cardButton(records[2].id), '지원하지 않는 원피스에는 입어보기 버튼 제외');
@@ -136,9 +161,21 @@ try {
   check(!tryOn(), '옷장 화면을 숨겨도 입어보기 정리');
   fixture.hidden = false;
 
-  list.children[0].querySelector('strong').click();
-  list.children[0].dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
-  check(opened === 2, '카드 본문 클릭과 키보드 상세 열기 유지');
+  detailButton(records[0].id).click();
+  check(opened === 1, '상세·나눔 예약 버튼으로 상세 열기');
+  detailButton(records[1].id).click();
+  check(openedOptions?.exchange?.id === 'completed-pants' && openedOptions.exchange.giverId === 'giver' && openedOptions.exchange.receiverId === 'receiver', 'Completed exchange details reach the history view');
+  openGarmentDetail(records[1], undefined, openedOptions);
+  const exchangeSummary = detail().querySelector('.garment-exchange-history');
+  check(exchangeSummary?.querySelectorAll('.garment-exchange-ratings li').length === 2 && exchangeSummary.textContent.includes('8') && exchangeSummary.textContent.includes('9'), 'Both revealed ratings appear in the exchange summary');
+  await closeDetail();
+  openGarmentDetail(records[1], undefined, {exchange: {...rankingState.exchanges[1], receiverToGiver: null, revealedAt: null}, users: rankingState.users});
+  const waitingSummary = detail().querySelector('.garment-exchange-history');
+  check(waitingSummary?.querySelector('.garment-exchange-history-wait') && !waitingSummary.querySelector('.garment-exchange-ratings') && !waitingSummary.textContent.includes('8'), 'Ratings remain hidden until both participants submit');
+  await closeDetail();
+  openGarmentDetail(records[2]);
+  check(detail().querySelector('.garment-detail-reserve')?.textContent === '나눔 예약하기', '상세 창에서 나눔 예약 버튼을 분명하게 표시');
+  await closeDetail();
   openGarmentDetail(records[0]);
   check(Boolean(detail().querySelector('.garment-detail-tryon')), '상의 상세 창에도 입어보기 버튼 표시');
   detail().querySelector('.garment-detail-tryon').click();

@@ -80,7 +80,7 @@ export function mountClothingWishes(host, readFilters, isActive) {
         const response = await fetch('/api/garments/' + encodeURIComponent(button.dataset.wishOpen), { cache: 'no-store' });
         if (!response.ok) throw new Error('옷이 삭제되었거나 정보를 불러올 수 없어요.');
         const garment = await response.json();
-        const { openGarmentDetail } = await import('../modules/garmentDetail.js');
+        const { openGarmentDetail } = await import('../modules/garmentDetail.js?v=detail-16');
         if (active()) openGarmentDetail(garment, refresh);
       } catch (error) { if (active()) status.textContent = error.message; }
     }

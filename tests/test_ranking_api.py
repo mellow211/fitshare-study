@@ -142,6 +142,48 @@ class RankingApiTests(unittest.TestCase):
         self.assertEqual(self.call('/api/ranking')[1]['rev'], 0)
 
 
+    def test_teacher_handoff_requires_teacher_and_completes_only_reserved_exchange(self):
+        state = {**EMPTY,
+                 'users': [{'id': 'u1', 'name': '지수'}, {'id': 'u2', 'name': '민수'}],
+                 'exchanges': [{'id': 'e1', 'giverId': 'u1', 'receiverId': 'u2', 'garmentId': 'coat-1',
+                                'itemName': '겨울 코트', 'status': 'reserved', 'createdAt': '2026-10-23T00:00:00Z'}]}
+        self.login('student', '민수')
+        self.assertEqual(self.call('/api/ranking', {'baseRev': 0, 'state': state})[0], 200)
+        self.assertEqual(self.call('/api/ranking/teacher-handoff', {'baseRev': 1, 'exchangeId': 'e1'})[0], 403)
+        self.call('/api/auth/logout', {})
+        status, teacher = self.call('/api/auth/signup', {'username': 'teacher', 'password': 'secret1',
+                                                          'name': '선생님', 'teacherCode': 'fitshare'})
+        self.assertEqual((status, teacher['user']['role']), (201, 'teacher'))
+        status, result = self.call('/api/ranking/teacher-handoff', {'baseRev': 1, 'exchangeId': 'e1'})
+        self.assertEqual(status, 200, result)
+        self.assertEqual(result['state']['exchanges'][0]['status'], 'completed')
+        self.assertTrue(result['state']['exchanges'][0]['completedAt'])
+        self.assertEqual(self.call('/api/ranking/teacher-handoff', {'baseRev': 2, 'exchangeId': 'e1'})[0], 409)
+
+    def test_teacher_handoff_requires_current_revision_and_existing_reservation(self):
+        self.call('/api/auth/signup', {'username': 'teacher', 'password': 'secret1', 'name': '선생님',
+                                       'teacherCode': 'fitshare'})
+        self.assertEqual(self.call('/api/ranking/teacher-handoff', {'baseRev': 0, 'exchangeId': 'missing'})[0], 404)
+        state = {**EMPTY, 'users': [{'id': 'u1', 'name': '지수'}, {'id': 'u2', 'name': '민수'}],
+                 'exchanges': [{'id': 'e1', 'giverId': 'u1', 'receiverId': 'u2', 'itemName': '점퍼',
+                                'status': 'reserved', 'createdAt': '2026-10-23T00:00:00Z'}]}
+        self.call('/api/ranking', {'baseRev': 0, 'state': state})
+        status, stale = self.call('/api/ranking/teacher-handoff', {'baseRev': 0, 'exchangeId': 'e1'})
+        self.assertEqual((status, stale['rev'], stale['state']), (409, 1, state))
+
+
+    def test_student_cannot_complete_another_students_reservation_through_general_sync(self):
+        self.login('other', '다른학생')
+        reserved = {**EMPTY, 'users': [{'id': 'u1', 'name': '지수'}, {'id': 'u2', 'name': '민수'}],
+                    'exchanges': [{'id': 'e1', 'giverId': 'u1', 'receiverId': 'u2', 'garmentId': 'coat-1',
+                                   'itemName': '겨울 코트', 'status': 'reserved', 'createdAt': '2026-10-23T00:00:00Z'}]}
+        self.call('/api/ranking', {'baseRev': 0, 'state': reserved})
+        forged = {**reserved, 'exchanges': [{**reserved['exchanges'][0], 'status': 'completed',
+                                             'completedAt': '2026-10-23T00:01:00Z'}]}
+        self.assertEqual(self.call('/api/ranking', {'baseRev': 1, 'state': forged})[0], 403)
+        self.assertEqual(self.call('/api/ranking')[1]['state']['exchanges'][0]['status'], 'reserved')
+
+
 
     def test_signup_login_logout_and_me(self):
 
@@ -293,15 +335,54 @@ class RankingApiTests(unittest.TestCase):
         folder = Path(self.temp_dir.name) / 'garments' / garment_id
         self.assertEqual(generate.call_args.args[0], (folder / 'product-cutout.png').read_bytes())
         prompt = generate.call_args.args[1]
-        self.assertIn('only patterns and details actually visible in the source', prompt)
-        self.assertIn('Do not invent', prompt)
-        self.assertIn('plain, hidden, or occluded', prompt)
-        self.assertNotIn('buttons, sleeve stripes', prompt)
+        self.assertIn('선명하고 즐거운 무지개 그라데이션', prompt)
+        self.assertIn('옷의 색상', prompt)
+        self.assertIn('실제로 보이는 것만', prompt)
+        self.assertIn('숨겨지거나 가려진 부분', prompt)
+        self.assertIn('보노보노 캐릭터', prompt)
+        self.assertIn('영향을 주지', prompt)
+        self.assertNotIn('warm ivory background', prompt)
         self.assertEqual((folder / 'photo.jpg').read_bytes(), source)
         self.assertTrue((folder / 'product-photo.png').exists())
         saved = json.loads((folder / 'garment.json').read_text(encoding='utf-8'))
         self.assertEqual(saved['photoUrl'], f'/api/garments/{garment_id}/photo')
         self.assertEqual(saved['productPhotoFile'], 'product-photo.png')
+
+    def test_only_teacher_can_delete_product_photo_and_original_stays(self):
+        garment_id, source = self.add_saved_garment()
+        folder = Path(self.temp_dir.name) / 'garments' / garment_id
+        (folder / 'product-photo.png').write_bytes(b'ai-photo')
+        (folder / 'product-thumbnail.jpg').write_bytes(b'thumb')
+        item = json.loads((folder / 'garment.json').read_text(encoding='utf-8'))
+        item.update({'productPhotoFile': 'product-photo.png', 'productPhotoUrl': 'x', 'productPhotoGeneratedAt': 'now'})
+        (folder / 'garment.json').write_text(json.dumps(item), encoding='utf-8')
+        (folder.parent / 'index.json').write_text(json.dumps([item]), encoding='utf-8')
+
+        def delete():
+            request = urllib.request.Request(self.base_url + f'/api/garments/{garment_id}/product-photo', method='DELETE')
+            try:
+                with self.opener.open(request) as result:
+                    return result.status
+            except urllib.error.HTTPError as error:
+                return error.code
+
+        self.assertEqual(delete(), 401)
+        self.login('student', 'Student')
+        self.assertEqual(delete(), 403)
+        self.assertTrue((folder / 'product-photo.png').exists())
+        self.call('/api/auth/logout', {})
+        self.call('/api/auth/signup', {'username': 'teacher', 'password': 'pw', 'name': 'Teacher',
+                                       'teacherCode': 'fitshare'})
+        self.assertEqual(delete(), 200)
+        self.assertEqual(delete(), 404)
+        self.assertFalse((folder / 'product-photo.png').exists())
+        self.assertFalse((folder / 'product-thumbnail.jpg').exists())
+        self.assertEqual((folder / 'photo.jpg').read_bytes(), source)
+        for path in (folder / 'garment.json', folder.parent / 'index.json'):
+            data = json.loads(path.read_text(encoding='utf-8'))
+            record = data[0] if isinstance(data, list) else data
+            self.assertNotIn('productPhotoFile', record)
+            self.assertNotIn('productPhotoGeneratedAt', record)
 
     def test_product_photo_reports_missing_server_configuration(self):
         garment_id, _ = self.add_saved_garment()
@@ -645,6 +726,58 @@ class RankingApiTests(unittest.TestCase):
 
         self.call('/api/auth/logout', {})
         self.assertEqual(self.call('/api/garments', legacy)[1].get('ownerName'), '')
+
+    def test_garment_codes_are_sequenced_by_school_and_type_and_include_donor_username(self):
+        self.login('minsu', '민수')
+        photo = 'data:image/jpeg;base64,' + base64.b64encode(bytes([255, 216, 255]) + b'sample').decode('ascii')
+
+        def register(name, garment_type_id, category, school_code='나눔초등학교'):
+            status, item = self.call('/api/garments', {
+                'name': name, 'category': category, 'garmentTypeId': garment_type_id, 'gender': 'unknown',
+                'lengthCm': 45, 'widthCm': 35, 'colorName': '파랑', 'photoDataUrl': photo,
+                'schoolCode': school_code,
+            })
+            self.assertEqual(status, 201, item)
+            return item
+
+        first_skirt = register('치마 1', 6, 'skirt')
+        second_skirt = register('치마 2', 6, 'skirt')
+        other = register('기타 옷', 7, 'other')
+        other_school_skirt = register('다른 학교 치마', 6, 'skirt', '서원초등학교')
+
+        self.assertEqual(first_skirt['garmentCode'], '나눔초등학교_s_001_minsu')
+        self.assertEqual(second_skirt['garmentCode'], '나눔초등학교_s_002_minsu')
+        self.assertEqual(other['garmentCode'], '나눔초등학교_e_001_minsu')
+        self.assertEqual(other_school_skirt['garmentCode'], '서원초등학교_s_001_minsu')
+        listed = {item['name']: item for item in self.call('/api/garments')[1]}
+        self.assertEqual(listed['치마 1']['garmentNumber'], 1)
+        self.assertEqual(listed['치마 2']['garmentNumber'], 2)
+        self.assertEqual(listed['기타 옷']['garmentNumber'], 1)
+        self.assertEqual(listed['다른 학교 치마']['garmentNumber'], 1)
+        request = urllib.request.Request(self.base_url + f"/api/garments/{first_skirt['id']}", method='DELETE')
+        with self.opener.open(request) as response:
+            self.assertEqual(response.status, 200)
+        third_skirt = register('치마 3', 6, 'skirt')
+        self.assertEqual(third_skirt['garmentCode'], '나눔초등학교_s_003_minsu')
+
+    def test_listing_existing_garments_backfills_stable_school_and_type_codes(self):
+        garment_id = 'a4831e58-d3d0-4e96-a7c8-b12734037a6c'
+        root = Path(self.temp_dir.name) / 'garments'
+        folder = root / garment_id
+        folder.mkdir(parents=True)
+        legacy = {'id': garment_id, 'name': '이전 치마', 'garmentTypeId': 6, 'garmentTypeName': '치마',
+                  'category': 'skirt', 'ownerName': '예전 학생 이름', 'ownerUsername': 'oldstudent',
+                  'createdAt': '2020-01-01T00:00:00Z'}
+        (folder / 'garment.json').write_text(json.dumps(legacy, ensure_ascii=False), encoding='utf-8')
+        (root / 'index.json').write_text(json.dumps([legacy], ensure_ascii=False), encoding='utf-8')
+
+        status, listed = self.call('/api/garments')
+
+        self.assertEqual(status, 200)
+        self.assertEqual(listed[0]['garmentCode'], '나눔초등학교_s_001_oldstudent')
+        saved = json.loads((folder / 'garment.json').read_text(encoding='utf-8'))
+        self.assertEqual(saved['garmentCode'], listed[0]['garmentCode'])
+        self.assertEqual(json.loads((root / '.sequences.json').read_text(encoding='utf-8'))['나눔초등학교|s'], 1)
 
 
 

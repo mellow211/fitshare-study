@@ -40,9 +40,10 @@ Object.defineProperty(HTMLImageElement.prototype, 'src', {
 let serverState = { version: 1, users: [], exchanges: [], badges: [], finalizedMonths: [] };
 let revision = 0;
 let signedIn = null;
+let garmentCatalog = [];
 let savedCallbacks = 0;
 let accountFailure = false;
-let fetchMe, renderRanking, openGarmentDetail, openProfileDialog, openMemberProfileDialog;
+let fetchMe, renderRanking, openGarmentDetail, openProfileDialog, openMemberProfileDialog, openTodaySharingDialog;
 const clone = value => JSON.parse(JSON.stringify(value));
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 window.fetch = async (input, options = {}) => {
@@ -53,10 +54,19 @@ window.fetch = async (input, options = {}) => {
   requests.push({ path, method, body });
   if (path === '/api/auth/me' && method === 'GET') return json({ user: signedIn });
   if (path === '/api/ranking' && method === 'GET') return json({ rev: revision, state: clone(serverState) });
+  if (path === '/api/garments' && method === 'GET') return json(clone(garmentCatalog));
   if (path === '/api/ranking' && method === 'POST') {
     if (!signedIn) return json({ error: '로그인한 뒤에 저장해 주세요.' }, 401);
     if (body.baseRev !== revision) return json({ rev: revision, state: clone(serverState) }, 409);
     serverState = clone(body.state); revision += 1; return json({ rev: revision });
+  }
+  if (path === '/api/ranking/teacher-handoff' && method === 'POST') {
+    if (signedIn?.role !== 'teacher') return json({ error: '선생님만 전달 완료를 표시할 수 있어요.' }, 403);
+    if (body.baseRev !== revision) return json({ error: '다른 친구가 먼저 기록했어요.', rev: revision, state: clone(serverState) }, 409);
+    const exchange = serverState.exchanges.find(item => item.id === body.exchangeId);
+    if (!exchange || exchange.status !== 'reserved') return json({ error: '전달 대기 중인 예약만 완료할 수 있어요.' }, 409);
+    serverState.exchanges = serverState.exchanges.map(item => item.id === body.exchangeId ? { ...item, status: 'completed', completedAt: new Date().toISOString() } : item);
+    revision += 1; return json({ rev: revision, state: clone(serverState) });
   }
   if (path === '/api/auth/change-password' && method === 'POST') {
     if (!signedIn) return json({ error: '로그인해 주세요.' }, 401);
@@ -155,8 +165,8 @@ const jacket = { id: 'isolated-ranking-jacket', name: '파란 점퍼', garmentTy
   gender: 'unisex', colorName: '파랑', lengthCm: 60, widthCm: 50, ownerName: '지수', ownerUsername: 'isolated-giver' };
 
 try {
-  [{ fetchMe }, { renderRanking }, { openGarmentDetail }, { openProfileDialog, openMemberProfileDialog }] = await Promise.all([
-    import('../js/auth.js?v=auth-3'), import('../modules/ranking.js'), import('../modules/garmentDetail.js'), import('../modules/profile.js?v=profile-4')
+  [{ fetchMe }, { renderRanking }, { openGarmentDetail }, { openProfileDialog, openMemberProfileDialog }, { openTodaySharingDialog }] = await Promise.all([
+    import('../js/auth.js?v=auth-3'), import('../modules/ranking.js'), import('../modules/garmentDetail.js'), import('../modules/profile.js?v=profile-4'), import('../modules/todaySharing.js?v=garment-codes-1')
   ]);
   await check('빈 참여 랭킹은 공개 비교만 보여 주고 계정·서버 기록을 만들지 않아요', async () => {
     await showRanking(null);
@@ -339,6 +349,25 @@ try {
     await waitFor(() => root.querySelectorAll('.rk-rank').length === 2, '빈 캐시에서 공개 순위를 읽지 못했어요.');
     assert(revision > 0 && serverState.exchanges.some(item => item.review), '모의 저장소의 기록이 사라졌어요.');
   });
+  await check('선생님 오늘의 나눔에서 예약 대상과 옷을 보고 전달 완료를 표시해요', async () => {
+    const reservedGarment = { ...jacket, id: 'isolated-teacher-handoff', name: '전달 확인용 가디건' };
+    garmentCatalog = [{ ...reservedGarment, garmentTypeCode: 'j', garmentNumber: 2,
+      donorId: 'isolated-giver', garmentCode: '나눔초등학교_j_002_isolated-giver' }];
+    const reservation = await reserveAs('민수', reservedGarment);
+    assert(reservation.status.includes('민수') && !reservation.error, '전달 확인용 예약을 만들지 못했어요.');
+    await signIn('지수', 'teacher');
+    const dialog = openTodaySharingDialog();
+    await waitFor(() => dialog?.textContent.includes('나눔초등학교_j_002_isolated-giver'), '종류별 옷 번호와 기부자 아이디를 표시하지 않아요.');
+    assert(dialog?.textContent.includes('전달 확인용 가디건') && dialog.textContent.includes('isolated-giver') && dialog.textContent.includes('지수') && dialog.textContent.includes('민수'), '옷 번호·이름·기부자 아이디·받는 학생을 표시하지 않아요.');
+    const button = dialog.querySelector('[data-complete]');
+    assert(button?.textContent.includes('나눔 완료'), '완료 표시 버튼이 없어요.');
+    const before = revision; button.click();
+    await waitFor(() => revision > before && serverState.exchanges.some(item => item.garmentId === reservedGarment.id && item.status === 'completed'), '완료 상태가 저장되지 않았어요.');
+    assert(dialog.querySelector('[data-completed-list]').textContent.includes('전달 확인용 가디건') && dialog.querySelector('[data-completed-list]').textContent.includes('나눔초등학교_j_002_isolated-giver'), '완료한 옷의 번호와 이름이 오늘 완료 목록에 보이지 않아요.');
+    await closeDialog(dialog);
+    await signIn('민수');
+    assert(openTodaySharingDialog() === null, '학생 계정에서 선생님 전달 화면이 열려요.');
+  });
   await check('로그아웃·손상된 캐시·HTML 같은 이름에도 화면이 깨지지 않아요', async () => {
     let dialog = await openMine('<b>x</b>');
     assert(dialog.querySelector('.rk-profile-name').textContent === '<b>x</b>' && !dialog.querySelector('.rk-profile-name b'), '이름의 HTML이 실행됐어요.');
@@ -352,8 +381,8 @@ try {
   await check('모든 계정·랭킹·사진 동작은 격리되어 실제 API로 나가지 않아요', async () => {
     assert(unexpected.length === 0, '예상하지 못한 API 요청: ' + JSON.stringify(unexpected));
     assert(window.localStorage === isolatedStorage, '실제 localStorage를 사용했어요.');
-    assert(requests.every(item => ['/api/auth/me','/api/ranking','/api/auth/teacher-code','/api/auth/reset-student-password','/api/auth/change-password'].includes(item.path)), '실제 계정이나 재고 API를 불렀어요.');
-    assert(!requests.some(item => /signup|login|logout|garments/.test(item.path)), '실제 계정 생성·로그인·재고 요청을 시도했어요.');
+    assert(requests.every(item => ['/api/auth/me','/api/ranking','/api/ranking/teacher-handoff','/api/auth/teacher-code','/api/auth/reset-student-password','/api/auth/change-password','/api/garments'].includes(item.path)), '실제 계정이나 재고 API를 불렀어요.');
+    assert(!requests.some(item => /signup|login|logout/.test(item.path)), '실제 계정 생성·로그인 요청을 시도했어요.');
   });
 } catch (error) {
   checks.push({ name: '격리된 검사 준비', passed: false, error: error.stack || error.message });

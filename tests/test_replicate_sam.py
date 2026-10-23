@@ -43,7 +43,7 @@ class ReplicateSamTests(unittest.TestCase):
         mask[10:30, 20:50] = 255
         self.mask_png = cv2.imencode('.png', cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR))[1].tobytes()
 
-    def run_prediction(self, statuses):
+    def run_prediction(self, statuses, cutout=False):
         requests = []
         replies = iter(statuses)
 
@@ -59,7 +59,26 @@ class ReplicateSamTests(unittest.TestCase):
 
         predictor = self.Predictor('secret-token', opener=opener, sleep=lambda _: None)
         predictor.set_image(self.image)
+        if cutout:
+            from tools.garment_segmentation import make_product_cutout
+
+            yolo_mask = np.zeros((40, 60), dtype=np.uint8)
+            yolo_mask[10:30, 20:50] = 1
+
+            class Detector:
+                def detect(self, *_args):
+                    return {'mask': yolo_mask, 'box': [20, 10, 49, 29]}
+
+            return make_product_cutout(self.image, garment_id=1, detector=Detector(), predictor=predictor), requests
         return predictor.predict(box=np.array([20, 10, 49, 29], dtype=np.float32), multimask_output=False), requests
+
+    def test_remote_single_mask_works_with_the_updated_yolo_sam_cutout(self):
+        png, _ = self.run_prediction([
+            {'status': 'succeeded', 'output': ['https://replicate.delivery/mask.png']},
+        ], cutout=True)
+        image = cv2.imdecode(np.frombuffer(png, np.uint8), cv2.IMREAD_UNCHANGED)
+        self.assertEqual(image.shape, (20, 30, 4))
+        self.assertTrue(np.all(image[:, :, 3] == 255))
 
     def test_box_is_sent_as_x_y_width_height_and_white_area_becomes_the_mask(self):
         (masks, _, _), requests = self.run_prediction([

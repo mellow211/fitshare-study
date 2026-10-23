@@ -59,6 +59,11 @@ class GarmentMetadataApiTests(unittest.TestCase):
         self.assertEqual(result['size'],'');self.assertEqual(result['seasons'],[]);self.assertEqual(result['condition'],'')
         self.assertNotIn('thickness',result)
 
+    def test_measurement_rule_is_valid_provenance_for_estimated_size(self):
+        result=clean_metadata({'size':'150','metadataSources':{'size':'measurement-rule'}})
+        self.assertEqual(result['size'],'150')
+        self.assertEqual(result['metadataSources']['size'],'measurement-rule')
+
     def test_type_change_does_not_keep_incompatible_old_details(self):
         result=clean_metadata({'category':'pants'},{'category':'top','garmentKind':'티셔츠','sleeveLength':'긴팔','bottomLength':'해당 없음'})
         self.assertEqual(result['garmentKind'],'바지');self.assertEqual(result['sleeveLength'],'해당 없음');self.assertEqual(result['bottomLength'],'')

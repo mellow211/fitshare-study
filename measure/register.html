@@ -6,8 +6,8 @@
   <meta name="description" content="ChArUco 교차점 매트로 옷을 살펴보고 스마트 옷장에 등록해요.">
   <title>옷 등록 | FitShare</title>
   <link rel="stylesheet" href="../css/styles.css?v=garment-registration-3">
-  <link rel="stylesheet" href="../css/measurement.css?v=garment-registration-3">
-  <link rel="stylesheet" href="../css/garment-registration.css?v=registration-camera-1">
+  <link rel="stylesheet" href="../css/measurement.css?v=garment-codes-1">
+  <link rel="stylesheet" href="../css/garment-registration.css?v=registration-gallery-picker-1">
   <script src="/js/vercel-fetch.js"></script>
 </head>
 <body class="measurement-page">
@@ -36,12 +36,13 @@
         <section class="registration-photo-area" aria-labelledby="registration-photo-title">
           <h2 id="registration-photo-title">옷 사진을 골라 주세요</h2>
           <label class="registration-type-label">옷 종류를 먼저 골라 주세요<select id="garment-type" required>
-            <option value="" selected disabled>종류를 선택해 주세요</option><option value="1">1. 상의 외투</option><option value="2">2. 크롭 티셔츠</option><option value="3">3. 원피스</option><option value="4">4. 점퍼</option><option value="5">5. 바지</option>
+              <option value="" selected disabled>종류를 선택해 주세요</option><option value="1">1. 상의 외투</option><option value="2">2. 티셔츠</option><option value="3">3. 원피스</option><option value="4">4. 점퍼</option><option value="5">5. 바지</option><option value="6">6. 치마</option><option value="7">7. 기타</option>
           </select></label>
           <p class="registration-help">종류마다 재는 위치가 달라요. 옷 종류를 골라야 실험과 같은 기준으로 측정할 수 있어요.</p>
           <div class="registration-file-actions">
             <button id="open-camera" class="registration-file-button" type="button" aria-controls="camera-panel">📷 카메라로 촬영</button>
-            <label class="registration-file-button">🖼️ 갤러리에서 사진 고르기<input id="gallery-photo" type="file" accept="image/*"></label>
+            <button id="choose-gallery-photo" class="registration-file-button" type="button">🖼️ 갤러리에서 사진 고르기</button>
+            <input id="gallery-photo" class="registration-hidden-file" type="file" accept="image/*" aria-label="갤러리에서 옷 사진 고르기" tabindex="-1">
           </div>
           <section id="camera-panel" class="registration-camera" aria-labelledby="camera-title" hidden>
             <h3 id="camera-title">카메라로 옷 사진을 찍어요</h3>
@@ -55,8 +56,12 @@
           <label id="native-camera-action" class="registration-file-button" hidden>📷 휴대폰 기본 카메라로 촬영<input id="camera-photo" type="file" accept="image/*" capture="environment"></label>
           <p class="registration-help">얼굴과 이름표는 사진에 나오지 않게 해요. 옷을 매트 가운데에 놓고 카메라는 위에서 찍어요.</p>
           <img id="garment-preview" class="registration-preview" alt="선택한 옷 사진 미리보기" hidden>
-          <button id="analyze-garment" class="primary-action" type="button" disabled>사진 살펴보기</button>
+          <button id="analyze-garment" class="primary-action" type="button" disabled>사진 등록하기</button>
           <button id="manual-registration" class="registration-file-button" type="button" hidden disabled>자동 분석이 어려우면 직접 입력하기</button>
+          <div id="registration-progress" class="registration-progress" hidden>
+            <div class="registration-progress-head"><strong id="registration-progress-step"></strong><span id="registration-progress-time"></span></div>
+            <div class="registration-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="registration-progress-bar"></span></div>
+          </div>
           <p id="analysis-status" class="registration-status" role="status"></p>
         </section>
 
@@ -92,6 +97,6 @@
     </main>
     <footer class="measurement-footer">사진은 FitShare를 실행하는 서버 PC에 저장돼요. 선생님과 함께 사용해요.</footer>
   </div>
-  <script type="module" src="../js/measurement/register.js?v=registration-product-photo-1"></script>
+  <script type="module" src="../js/measurement/register.js?v=progress-1"></script>
 </body>
 </html>

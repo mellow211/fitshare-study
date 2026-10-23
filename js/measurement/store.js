@@ -62,7 +62,21 @@ export async function completeExperiment(runId) {
 }
 
 export async function listExperiments() {
-  return requestJson('/api/experiments');
+  const experiments = await requestJson('/api/experiments');
+  let localSession = null;
+  try { localSession = await loadSession(); } catch { /* Older or restricted browsers may not provide IndexedDB. */ }
+  if (!localSession?.records?.length || experiments.some((item) => item.id === localSession.serverId)) return experiments;
+
+  const localExperiment = {
+    id: 'local',
+    round: localSession.round || 1,
+    createdAt: localSession.createdAt || localSession.updatedAt,
+    completed: Number(localSession.matIndex) >= 4,
+    garmentCount: localSession.garments?.length || 0,
+    recordCount: localSession.records.length,
+    localOnly: true
+  };
+  return [...experiments, localExperiment].sort((a, b) => Number(b.round || 0) - Number(a.round || 0));
 }
 
 export async function getExperiment(runId) {

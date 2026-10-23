@@ -12,6 +12,7 @@
 .registration-file-actions { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
 .registration-file-button { display:flex; justify-content:center; align-items:center; min-height:48px; border:1px solid #c7d7f6; border-radius:11px; color:#3768bb; background:#f3f7ff; font-size:13px; font-weight:800; cursor:pointer; }
 .registration-file-button input { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); }
+.registration-hidden-file { position:fixed; left:-10000px; top:0; width:1px; height:1px; opacity:0; }
 .registration-camera { display:grid; gap:11px; padding:15px; border:1px solid #c7d7f6; border-radius:13px; background:#f8fbff; }
 .registration-camera h3 { margin:0; color:#294b78; font-size:16px; }
 .registration-camera[hidden],.registration-file-button[hidden] { display:none; }
@@ -37,3 +38,9 @@
 .registered-garment-card strong { display:block; margin:3px 0 5px; color:#294b78; font-size:13px; }
 .registered-garment-card p { margin:3px 0; color:#65738d; font-size:11px; line-height:1.5; }
 @media(max-width:650px) { .registration-steps { grid-template-columns:1fr; gap:7px; }.registration-steps li { padding:10px; }.registered-garment-list { grid-template-columns:1fr; }.registration-preview { max-height:340px; } }
+.registration-progress { padding:10px 12px; border:1px solid #d6e3fb; border-radius:12px; background:#f4f8ff; }
+.registration-progress[hidden] { display:none; }
+.registration-progress-head { display:flex; justify-content:space-between; gap:10px; margin-bottom:7px; color:#35507f; font-size:13px; }
+.registration-progress-track { height:9px; overflow:hidden; border-radius:99px; background:#e1e9f7; }
+.registration-progress-track span { display:block; width:0; height:100%; border-radius:inherit; background:linear-gradient(90deg,#4b83f5,#5ac6a1); transition:width .4s ease; }
+@media (prefers-reduced-motion:reduce) { .registration-progress-track span { transition:none; } }

@@ -1,4 +1,4 @@
-import { listExperiments } from './store.js?v=server-storage-1';
+import { listExperiments } from './store.js?v=legacy-session-fallback-1';
 
 const root = document.querySelector('#sessions-app');
 

@@ -1,14 +1,56 @@
 ﻿import { readRegistrationPhoto } from './registrationPhoto.js?v=garment-registration-2';
-import { createGarmentCloset } from './garmentCloset.js?v=closet-tools-6';
-import { fetchMe } from '../auth.js?v=auth-2';
+import { createGarmentCloset } from './garmentCloset.js?v=closet-tools-19';
+import { fetchMe } from '../auth.js?v=auth-3';
 import { createRegistrationCamera } from './registrationCamera.js?v=registration-camera-1';
-import { createGarmentMetadataFields } from '../garmentMetadata.js';
+import { createGarmentMetadataFields } from '../garmentMetadata.js?v=skirt-1';
 
 const photoInputs = [document.querySelector('#camera-photo'), document.querySelector('#gallery-photo')];
+const galleryInput = document.querySelector('#gallery-photo');
 const photoPreview = document.querySelector('#garment-preview');
 const analyzeButton = document.querySelector('#analyze-garment');
 const manualButton = document.querySelector('#manual-registration');
 const analysisStatus = document.querySelector('#analysis-status');
+const progressBox = document.querySelector('#registration-progress');
+const progressStep = document.querySelector('#registration-progress-step');
+const progressTime = document.querySelector('#registration-progress-time');
+const progressBar = document.querySelector('#registration-progress-bar');
+const progressTrack = progressBar.parentElement;
+let progressTimer = null;
+
+// 서버는 한 번에 결과만 돌려주므로, 단계는 걸리는 시간을 어림해 보여 주는 안내예요. 끝나면 100%로 채워요.
+function startProgress(steps) {
+  stopProgress();
+  const startedAt = Date.now();
+  progressBox.hidden = false;
+  const tick = () => {
+    const elapsed = (Date.now() - startedAt) / 1000;
+    let passed = 0;
+    let current = steps[steps.length - 1];
+    for (const step of steps) {
+      if (elapsed < passed + step.seconds) { current = step; break; }
+      passed += step.seconds;
+    }
+    const total = steps.reduce((sum, step) => sum + step.seconds, 0);
+    const percent = Math.min(95, Math.round((elapsed / total) * 100));
+    setProgress(percent, current.label, `${Math.floor(elapsed)}초`);
+  };
+  tick();
+  progressTimer = setInterval(tick, 500);
+}
+
+function setProgress(percent, label, time = '') {
+  progressStep.textContent = label;
+  progressTime.textContent = time;
+  progressBar.style.width = `${percent}%`;
+  progressTrack.setAttribute('aria-valuenow', String(percent));
+}
+
+function stopProgress(finalLabel = '') {
+  clearInterval(progressTimer);
+  progressTimer = null;
+  if (finalLabel) setProgress(100, finalLabel);
+  else progressBox.hidden = true;
+}
 const form = document.querySelector('#garment-form');
 const saveStatus = document.querySelector('#save-status');
 const listStatus = document.querySelector('#garment-list-status');
@@ -20,6 +62,10 @@ const garmentClosetView = createGarmentCloset({
 });
 const garmentTypeInput = document.querySelector('#garment-type');
 const backgroundInput = document.querySelector('#background-id');
+const schoolCode = (() => {
+  try { return (localStorage.getItem('fitshare.schoolCode') || '나눔초등학교').slice(0, 30); }
+  catch { return '나눔초등학교'; }
+})();
 let photoDataUrl = '';
 let closetImageDataUrl = '';
 let generatedName = '';
@@ -68,7 +114,7 @@ async function handlePhotoSelection(input) {
     photoDataUrl = await readRegistrationPhoto(file);
     photoPreview.src = URL.createObjectURL(file);
     photoPreview.hidden = false;
-    analyzeButton.disabled = !garmentTypeInput.value;
+    analyzeButton.disabled = !garmentTypeInput.value || Number(garmentTypeInput.value) === 7;
     manualButton.hidden = false;
     manualButton.disabled = !garmentTypeInput.value;
     showStatus(analysisStatus, '사진을 골랐어요. 다음 버튼을 눌러 옷을 찾아봐요.');
@@ -77,32 +123,53 @@ async function handlePhotoSelection(input) {
   }
 }
 
-photoInputs.forEach((input) => input.addEventListener('change', () => handlePhotoSelection(input)));
+photoInputs.forEach((input) => input.addEventListener('change', () => {
+  const selectedFile = input.files?.[0];
+  if (!selectedFile) return;
+  void handlePhotoSelection({ files: [selectedFile] });
+  input.value = '';
+}));
+document.querySelector('#choose-gallery-photo').addEventListener('click', () => galleryInput.click());
 
 analyzeButton.addEventListener('click', runAnalysis);
 
 backgroundInput.addEventListener('change', () => {
   analysisVersion++;
-  analyzeButton.disabled = !photoDataUrl || !garmentTypeInput.value;
+  analyzeButton.disabled = !photoDataUrl || !garmentTypeInput.value || Number(garmentTypeInput.value) === 7;
   if(manualMode)return;
+  if (Number(garmentTypeInput.value) === 7) return;
   if (!form.hidden && photoDataUrl) runAnalysis();
-  else if(photoDataUrl)showStatus(analysisStatus,'분석 조건이 바뀌었어요. 사진 살펴보기를 다시 눌러 주세요.');
+  else if(photoDataUrl)showStatus(analysisStatus,'분석 조건이 바뀌었어요. 사진 등록하기를 다시 눌러 주세요.');
 });
 
 garmentTypeInput.addEventListener('change', () => {
   analysisVersion++;
-  analyzeButton.disabled = !photoDataUrl || !garmentTypeInput.value;
+  const garmentTypeId = Number(garmentTypeInput.value);
+  analyzeButton.disabled = !photoDataUrl || !garmentTypeInput.value || garmentTypeId === 7;
   manualButton.disabled = analyzeButton.disabled;
+  if (garmentTypeId === 7) {
+    manualButton.hidden = false;
+    manualButton.disabled = !photoDataUrl;
+    if (!form.hidden) {
+      manualMode = true;
+      closetImageDataUrl = '';
+      document.querySelector('#analysis-preview').hidden = true;
+      document.querySelector('#review-note').textContent = '기타 옷은 자동 실측값을 사용하지 않아요. 실제 자로 길이와 너비를 다시 확인해 주세요.';
+    }
+    suggestMetadata();
+    if (photoDataUrl) showStatus(analysisStatus, '기타 옷은 자동 실측 기준이 없어요. 실제 자로 길이와 너비를 재어 직접 등록해 주세요.');
+    return;
+  }
   if(manualMode){suggestMetadata();manualButton.click();return;}
   if (!form.hidden && photoDataUrl) runAnalysis();
-  else if(photoDataUrl)showStatus(analysisStatus,'옷 종류가 바뀌었어요. 사진 살펴보기를 다시 눌러 주세요.');
+  else if(photoDataUrl)showStatus(analysisStatus,'옷 종류가 바뀌었어요. 사진 등록하기를 다시 눌러 주세요.');
 });
 
 manualButton.addEventListener('click', () => {
   if(!photoDataUrl||!garmentTypeInput.value)return;
   analysisVersion++;
   manualMode=true;
-  analyzeButton.disabled=false;
+  analyzeButton.disabled = Number(garmentTypeInput.value) === 7;
   if(form.hidden){
     form.elements.lengthCm.value='';form.elements.widthCm.value='';form.elements.colorName.value='';
     closetImageDataUrl='';
@@ -125,19 +192,26 @@ async function runAnalysis() {
   analyzeButton.disabled = true;
   form.hidden = true;
   showStatus(analysisStatus, '고른 배경의 표시와 옷 모양을 찾고 있어요. 잠시 기다려 주세요.');
+  startProgress([
+    { label: '1/4 사진을 서버로 보내고 있어요', seconds: 2 },
+    { label: '2/4 매트 표시를 찾아 사진을 반듯하게 펴고 있어요', seconds: 3 },
+    { label: '3/4 옷의 윤곽을 찾고 있어요', seconds: 5 },
+    { label: '4/4 길이와 너비를 재고 있어요', seconds: 4 }
+  ]);
   try {
     const result = await requestJson('/api/garments/analyze', {
       method: 'POST', body: JSON.stringify({ backgroundId: backgroundInput.value, garmentId: Number(garmentTypeInput.value), photoDataUrl })
     });
     if(version!==analysisVersion)return;
+    stopProgress('분석이 끝났어요!');
     fillForm(result);
     form.hidden = false;
     showStatus(analysisStatus, result.message);
     form.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (error) {
-    if(version===analysisVersion)showStatus(analysisStatus, error.message, true);
+    if(version===analysisVersion){ stopProgress(); showStatus(analysisStatus, error.message, true); }
   } finally {
-    if(version===analysisVersion)analyzeButton.disabled = !photoDataUrl||!garmentTypeInput.value;
+    if(version===analysisVersion)analyzeButton.disabled = !photoDataUrl || !garmentTypeInput.value || Number(garmentTypeInput.value) === 7;
   }
 }
 
@@ -150,16 +224,19 @@ form.addEventListener('submit', async (event) => {
     ...metadataFields.read(),
     measurementMethod: manualMode ? 'manual' : 'photo-analysis',
     name: values.get('name'), category: categoryForId(garmentTypeId), garmentTypeId, gender: values.get('gender'),
+    schoolCode,
     lengthCm: Number(values.get('lengthCm')), widthCm: Number(values.get('widthCm')),
     colorName: values.get('colorName'), photoDataUrl, closetImageDataUrl, backgroundId: backgroundInput.value
   };
   const saveButton = form.querySelector('button[type="submit"]');
   saveButton.disabled = true;
   showStatus(saveStatus, '옷과 사진을 서버에 저장하고 있어요.');
+  startProgress([{ label: '1/2 옷과 사진을 서버에 저장하고 있어요', seconds: 4 }]);
   try {
     const saved = await requestJson('/api/garments', { method: 'POST', body: JSON.stringify(payload) });
+    startProgress([{ label: '2/2 AI 상품 사진을 만들고 있어요 (옷 분리 후 이미지 생성)', seconds: 40 }]);
     showStatus(analysisStatus, `${saved.name}을(를) 저장했어요. AI 상품 사진을 자동으로 만들고 있어요.`);
-    await loadGarments();
+    await loadGarments(saved.id);
     form.reset();
     metadataFields.reset();
     generatedName = '';
@@ -175,12 +252,15 @@ form.addEventListener('submit', async (event) => {
     manualButton.hidden = true;
     try {
       await requestJson(`/api/garments/${encodeURIComponent(saved.id)}/product-photo`, { method: 'POST', body: '{}' });
+      stopProgress('등록과 AI 상품 사진 생성이 끝났어요!');
       showStatus(analysisStatus, `${saved.name}의 등록과 AI 상품 사진 생성이 끝났어요!`);
     } catch (error) {
+      stopProgress();
       showStatus(analysisStatus, `옷과 실측값은 저장했지만 AI 상품 사진을 만들지 못했어요. ${error.message} 선생님에게 사진 생성을 요청해 주세요.`, true);
     }
-    await loadGarments();
+    await loadGarments(saved.id);
   } catch (error) {
+    stopProgress();
     showStatus(saveStatus, error.message, true);
   } finally {
     saveButton.disabled = false;
@@ -204,13 +284,15 @@ function fillForm(result) {
   document.querySelector('#review-note').textContent = '초록 선은 옷 테두리, 주황 선은 길이, 파란 선은 너비예요. 사진과 숫자가 맞는지 살펴보고 필요하면 고쳐 주세요.';
 }
 
-async function loadGarments() {
-  return garmentClosetView.reload();
+async function loadGarments(prioritizeId) {
+  return garmentClosetView.reload(prioritizeId);
 }
 
 function categoryForId(garmentId) {
   if (garmentId === 3) return 'dress';
   if (garmentId === 5) return 'pants';
+  if (garmentId === 6) return 'skirt';
+  if (garmentId === 7) return 'other';
   return 'top';
 }
 
