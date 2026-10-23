@@ -84,6 +84,7 @@ AI가 임의로 핵심 로직을 바꾸지 않는다.
 
 - 옷 등록의 실측: 너비는 GrabCut, 기장은 YOLO→GrabCut으로 마스크를 만든다. (`tools/vision_pipeline.py`의 `measure_garment`, 기장용은 `get_yolo_grabcut_provider`)
 - 옷장 `옷만 보기` 이미지와 AI 상품 이미지 생성은 같은 YOLO + SAM 분할을 쓴다. YOLO가 옷 영역을 찾고 SAM 후보 마스크 중 YOLO와 겹치는 영역을 비교해 옷을 투명 배경으로 분리한다. (`tools/garment_segmentation.py`의 `make_product_cutout`; 결과 버전은 `yolo-sam-vit-b-v3`)
+  - 목록의 `/thumbnail`은 저장된 상품 사진·옷장 미리보기·축소 원본 순서로 표시하며 AI 분리를 시작하지 않는다. 이전 버전 미리보기도 사용할 수 있지만 분할 버전 기록은 변경하지 않는다. 실측·명시적 옷 분리·가상 입어보기의 알고리즘은 유지한다.
   - Vercel에는 PyTorch가 들어가지 않아, 같은 YOLO 상자를 Replicate의 SAM(`tools/replicate_sam.py`)에 보내 분리한다. 로컬 `server.py`는 기존처럼 PC의 SAM을 쓴다.
 - 두 용도의 분할 방식을 서로 섞지 않는다. 바꿔야 하면 먼저 이유를 설명하고 이 규칙도 함께 고친다.
 - 가상 입어보기 표시용 분할은 원본 사진의 YOLO 마스크와 가장자리 연결 배경을 함께 사용하고, 복잡한 배경에서는 소매 보호 씨앗 GrabCut으로 보정한다. 이 코드는 `tools/tryon_segmentation.py`에 분리하며 등록 실측·AI 상품 사진의 알고리즘과 저장 결과를 변경하지 않는다.
