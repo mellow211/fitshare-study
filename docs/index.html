@@ -3,66 +3,40 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="초등학생이 옷 실측 문제를 질문하고 한 가지씩 실험해 답을 찾은 탐구 기록입니다." />
-  <title>옷 크기 재기 탐구 기록 | FitShare</title>
+  <meta name="description" content="초등학생이 질문하고 실험하며 알아간 FitShare 탐구 주제를 골라 보세요." />
+  <title>FitShare 탐구 주제 고르기</title>
   <link rel="stylesheet" href="css/experiment-story.css" />
 </head>
 <body>
   <main class="story-shell">
-    <header class="story-top"><a href="../index.html">FitShare로 돌아가기</a><span>초등학생 탐구 기록 · 옷 크기 재기</span></header>
-    <section class="hero" aria-labelledby="page-title">
-      <div class="hero-copy">
-        <p class="eyebrow">내가 궁금해서 시작한 실험</p>
-        <h1 id="page-title">사진만 보고<br />옷 크기를 알 수 있을까?</h1>
-        <p class="hero-lead">처음부터 답을 아는 건 아니었어요. “왜 틀릴까?” 하고 질문하고, 한 번에 한 가지만 바꾸며 직접 확인했어요.</p>
-        <a class="button-link" href="#탐구일지">탐구 일지 처음부터 읽기 <span aria-hidden="true">↓</span></a>
-        <p class="student-voice">“결과가 예상과 달라도 괜찮아요. 왜 그런지 다시 생각하면 다음 실험이 떠올라요!”</p>
-      </div>
-      <img class="hero-art" src="assets/measurement-story-hero.png" alt="아이가 격자 기준판 위에 옷을 펼치고 사진 실측 방법을 탐구하는 그림" />
+    <header class="story-top"><a href="../index.html">FitShare로 돌아가기</a><span>초등학생 탐구 기록</span></header>
+    <section class="learning-paths" aria-labelledby="learning-path-title">
+      <p class="eyebrow">궁금한 주제를 골라 봐요</p>
+      <h1 id="learning-path-title">어디부터 볼까요?</h1>
+      <p class="section-intro">궁금한 주제를 누르면 질문에서 실험과 발견까지 차근차근 볼 수 있어요.</p>
+      <nav class="learning-path-list" aria-label="FitShare 탐구 주제">
+        <a class="learning-path-button" href="clothing-size-research.html" aria-label="옷 크기 재기 연구노트">
+          <span class="path-step" aria-hidden="true">1</span>
+          <span class="path-copy"><strong>옷 크기 재기 연구노트</strong><small>질문을 세우고 한 가지씩 실험한 기록</small></span>
+          <span class="path-arrow" aria-hidden="true">→</span>
+        </a>
+        <a class="learning-path-button" href="가상입어보기-개선보고서.html" aria-label="미리 입어 보기 (가상 입어보기)">
+          <span class="path-step" aria-hidden="true">2</span>
+          <span class="path-copy"><strong>미리 입어 보기 (가상 입어보기)</strong><small>사진 속 옷 모양을 지키기 위해 바꾼 점</small></span>
+          <span class="path-arrow" aria-hidden="true">→</span>
+        </a>
+        <a class="learning-path-button" href="추천기능-학습과발표.html" aria-label="잘 어울리는 옷 추천">
+          <span class="path-step" aria-hidden="true">3</span>
+          <span class="path-copy"><strong>잘 어울리는 옷 추천</strong><small>내게 맞는 옷과 코디를 찾아간 기록</small></span>
+          <span class="path-arrow" aria-hidden="true">→</span>
+        </a>
+        <a class="learning-path-button" href="server-explained.html" aria-label="FitShare 서버는 어떻게 일할까요?">
+          <span class="path-step" aria-hidden="true">4</span>
+          <span class="path-copy"><strong>FitShare 서버는 어떻게 일할까요?</strong><small>화면·계산·저장 장소와 앞으로의 확장</small></span>
+          <span class="path-arrow" aria-hidden="true">→</span>
+        </a>
+      </nav>
     </section>
-
-    <section class="quick-help" aria-labelledby="quick-title">
-      <p class="eyebrow">궁금한 점을 눌러 봐요</p>
-      <h2 id="quick-title">왜 그럴까? 실험에서 찾은 쉬운 답</h2>
-      <p class="section-intro">아래 버튼을 누르면 배경, 사진 크기, 재는 위치를 그림과 함께 볼 수 있어요.</p>
-      <div class="question-buttons" role="group" aria-label="실측 궁금증 선택">
-        <button type="button" class="question-button is-selected" data-story-target="background" aria-controls="answer-background" aria-pressed="true">① 어떤 배경이 좋을까?</button>
-        <button type="button" class="question-button" data-story-target="resolution" aria-controls="answer-resolution" aria-pressed="false">② 사진은 얼마나 크게?</button>
-        <button type="button" class="question-button" data-story-target="measure" aria-controls="answer-measure" aria-pressed="false">③ 옷 어디를 잴까?</button>
-      </div>
-      <div class="answer-panel" id="answer-background" data-story-panel="background">
-        <img src="assets/photos/ChaArUco_Cross/chc_1_w55_h65.jpg" alt="점과 십자 표식이 있는 기준판 위에 놓인 옷" loading="lazy" />
-        <div><h3>한 가지 배경이 모든 치수에서 최고일까?</h3><p>배경 네 종류를 같은 옷 사진으로 비교했어요. 이 실험에서는 M4(ChArUco+십자)의 A0 환산이 너비 오차가 가장 작았지만(5장 평균 0.58cm), 기장 오차는 더 컸어요(4.76cm). <strong>너비와 기장을 모두 잘 재는 단 하나의 배경이라고 말하기는 어려워요.</strong> 결과는 옷과 조건에 따라 달라질 수 있어요.</p><a href="measure-dataset-round4.html">배경 비교 결과 자세히 보기 →</a></div>
-      </div>
-      <div class="answer-panel" id="answer-resolution" data-story-panel="resolution" hidden>
-        <div class="pixel-picture" role="img" aria-label="작은 사진보다 큰 사진에 더 많은 점이 들어 있는 모습을 보여주는 그림"><span class="pixel-small" aria-hidden="true"></span><span class="pixel-arrow" aria-hidden="true">→</span><span class="pixel-large" aria-hidden="true"></span></div>
-        <div><h3>큰 사진일수록 무조건 더 정확할까?</h3><p>같은 사진 20장으로 비교하니 긴 변 848px 조건이 이번 실험의 정확도와 처리 시간에서 가장 균형이 좋았어요. 4000px 원본 조건은 더 많은 시간이 걸렸고 오차도 더 작지 않았어요. 그래서 현재 흐름은 <strong>848px까지 쓰고, 원본 사진 비율은 유지</strong>해요. 이것은 시험한 20장 안에서의 답이에요.</p><a href="measure-dataset-round5.html">사진 크기 비교 결과 자세히 보기 →</a></div>
-      </div>
-      <div class="answer-panel" id="answer-measure" data-story-panel="measure" hidden>
-        <div class="shirt-measure-picture" role="img" aria-label="옷의 위쪽을 0퍼센트, 아래쪽을 100퍼센트로 보고 종류마다 정한 위치에 너비선을 표시한 그림"><span class="shirt-shape" aria-hidden="true"></span><span class="shirt-measure-line" aria-hidden="true"></span></div>
-        <div><h3>옷마다 정해 둔 위치에서 너비를 재요</h3><p>컴퓨터가 겨드랑이 봉제선을 직접 찾는 건 아니에요. 옷 종류를 고르면 옷 영역의 위에서부터 정해진 비율만큼 내려온 곳을 재요. 외투 40%, 크롭 티셔츠 32.5%, 원피스 15%, 점퍼 20%, 바지 10%예요. 60% 지점도 시험했지만 더 정확하지 않아 기존 위치를 남겼어요.</p><a href="measurement-process.html#ratio-example">재는 위치 그림과 과정을 더 보기 →</a> · <a href="measure-dataset-round8.html">너비선 비교 기록 →</a></div>
-      </div>
-    </section>
-
-    <section class="journal" id="탐구일지" aria-labelledby="journal-title">
-      <p class="eyebrow">내가 한 생각을 따라가요</p>
-      <h2 id="journal-title">질문 하나, 실험 하나씩</h2>
-      <p class="section-intro">실험할 때마다 한 가지만 바꾸려고 했어요. 그래야 결과가 달라졌을 때 무엇 때문인지 생각할 수 있으니까요.</p>
-      <ol class="journal-list">
-        <li class="journal-entry"><span class="entry-number">1</span><article><p class="entry-question">왜 사진으로 잰 옷 크기가 실제와 다를까?</p><dl><div><dt>내 생각</dt><dd>배경 무늬나 옷을 찾는 방법이 문제일 수 있어.</dd></div><div><dt>바꿔 본 것</dt><dd>점·격자·표식 배경과 여러 옷 찾기 방법을 같은 사진으로 비교했어.</dd></div><div><dt>알게 된 점</dt><dd>무엇을 바꾸느냐에 따라 너비와 기장 결과가 달라졌어.</dd></div><div><dt>다음 질문</dt><dd>사진이 기울어졌다면 먼저 반듯하게 고쳐야 할까?</dd></div></dl><a href="measure-dataset.html">첫 실험 결과 보기 →</a></article></li>
-        <li class="journal-entry"><span class="entry-number">2</span><article><p class="entry-question">기울어진 사진은 언제 바로잡아야 할까?</p><dl><div><dt>내 생각</dt><dd>항상 고치면 더 정확해질 것 같아.</dd></div><div><dt>바꿔 본 것</dt><dd>매번 반듯하게 펴는 방법과 많이 기울었을 때만 펴는 방법을 비교했어.</dd></div><div><dt>알게 된 점</dt><dd>사진마다 결과가 달라서 무조건 한 방법이 낫다고 말하기 어려웠어.</dd></div><div><dt>다음 질문</dt><dd>배경 전체 크기보다 무늬 간격을 자로 쓰면 어떨까?</dd></div></dl><a href="measure-dataset-round3.html">사진 보정 실험 보기 →</a></article></li>
-        <li class="journal-entry"><span class="entry-number">3</span><article><p class="entry-question">어떤 기준판이 사진 속 크기를 잘 알려줄까?</p><dl><div><dt>내 생각</dt><dd>배경의 작은 무늬 간격을 재면 사진 기울기에도 도움이 될 거야.</dd></div><div><dt>바꿔 본 것</dt><dd>A0 전체 크기와 각 배경의 무늬 간격으로 환산했어.</dd></div><div><dt>알게 된 점</dt><dd>간격을 이용하면 너비가 좋아지는 배경도 있었지만 기장은 다를 수 있었어.</dd></div><div><dt>다음 질문</dt><dd>사진을 크게 쓰면 작은 옷 가장자리도 더 잘 보일까?</dd></div></dl><a href="measure-dataset-round4.html">기준판 실험 보기 →</a></article></li>
-        <li class="journal-entry"><span class="entry-number">4</span><article><p class="entry-question">사진은 클수록 더 정확할까?</p><dl><div><dt>내 생각</dt><dd>큰 사진에는 자세한 점이 많아서 더 잘 잴 것 같아.</dd></div><div><dt>바꿔 본 것</dt><dd>같은 20장을 848·1000·1600·2400·4000px로 처리했어.</dd></div><div><dt>알게 된 점</dt><dd>이번 20장에서는 848px가 오차와 처리 시간의 균형이 좋았어. 더 큰 사진은 더 오래 걸려도 더 정확하지 않았어.</dd></div><div><dt>다음 질문</dt><dd>옷 모양을 찾는 방법도 결과에 영향을 줄까?</dd></div></dl><a href="measure-dataset-round5.html">사진 크기 실험 보기 →</a></article></li>
-        <li class="journal-entry"><span class="entry-number">5</span><article><p class="entry-question">옷의 테두리는 어떻게 찾을까?</p><dl><div><dt>내 생각</dt><dd>옷 모양을 잘 나누면 길이와 너비도 좋아질 거야.</dd></div><div><dt>바꿔 본 것</dt><dd>GrabCut, YOLO, YOLO와 GrabCut을 함께 쓰는 방법, SAM을 비교했어.</dd></div><div><dt>알게 된 점</dt><dd>너비와 기장에 맞는 방법이 서로 다를 수 있었어.</dd></div><div><dt>다음 질문</dt><dd>괜찮아 보인 설정을 함께 써도 잘 될까?</dd></div></dl><a href="measure-dataset-round6.html">옷 테두리 실험 보기 →</a></article></li>
-        <li class="journal-entry"><span class="entry-number">6</span><article><p class="entry-question">실험에서 고른 방법을 합치면 더 나아질까?</p><dl><div><dt>내 생각</dt><dd>각 실험에서 잘 된 방법을 모아 시험해 보자.</dd></div><div><dt>바꿔 본 것</dt><dd>848px와 치수별 옷 나누기 방법을 한 흐름으로 묶었어.</dd></div><div><dt>알게 된 점</dt><dd>한 번에 합치면 처리 시간이 늘거나 너비 오차가 커질 수도 있어. 실패한 사진 한 장은 대체 방법으로 다시 쟀어.</dd></div><div><dt>다음 질문</dt><dd>너비를 재는 줄을 더 아래로 옮기면 어떨까?</dd></div></dl><a href="measure-dataset-round7.html">합친 방법 결과 보기 →</a></article></li>
-        <li class="journal-entry"><span class="entry-number">7</span><article><p class="entry-question">너비선을 아래로 옮기면 더 잘 맞을까?</p><dl><div><dt>내 생각</dt><dd>옷의 60%쯤 되는 곳에서 재면 더 정확할지도 몰라.</dd></div><div><dt>바꿔 본 것</dt><dd>다른 설정은 그대로 두고 티셔츠·원피스·점퍼의 너비선 위치만 바꿨어.</dd></div><div><dt>알게 된 점</dt><dd>이번 20장에서는 60% 위치가 더 정확하지 않았어. 원래 위치를 유지하기로 했어.</dd></div><div><dt>다음 질문</dt><dd>AI가 옷 사진을 바꾸더라도 줄무늬와 모양을 잘 지킬까?</dd></div></dl><a href="measure-dataset-round8.html">너비선 실험 보기 →</a></article></li>
-        <li class="journal-entry"><span class="entry-number">8</span><article><p class="entry-question">AI가 옷을 상품 사진처럼 바꾸면서 무늬를 지킬 수 있을까?</p><dl><div><dt>내 생각</dt><dd>배경을 예쁘게 바꾸어도 옷 디자인은 그대로여야 해.</dd></div><div><dt>바꿔 본 것</dt><dd>편집 방법과 안내 문장을 비교했어.</dd></div><div><dt>알게 된 점</dt><dd>줄무늬를 지키기 어려운 경우가 있어, 어떤 설정에서 잘 남는지 따로 확인했어.</dd></div><div><dt>다음 질문</dt><dd>다른 옷과 더 많은 사진에서도 같은지 다시 확인해야 해.</dd></div></dl><a href="measure-dataset-ai-product-shot.html">AI 사진 실험 보기 →</a></article></li>
-      </ol>
-    </section>
-
-    <aside class="honest-note"><strong>실험 결과를 읽을 때 기억해요</strong><p>여기 나온 숫자는 옷 20장(배경 비교는 배경마다 5장)으로 확인한 결과예요. 모든 옷에서 늘 똑같이 나온다는 약속은 아니에요. 예상과 다르게 나온 결과도 다음 질문을 만드는 중요한 발견이에요.</p></aside>
-    <footer><a href="measurement-process.html">사진 실측 과정을 쉬운 그림으로 더 알아보기 →</a><p>FitShare · 학생 탐구 기록</p></footer>
   </main>
-  <script type="module" src="js/experiment-story-home.js"></script>
 </body>
 </html>

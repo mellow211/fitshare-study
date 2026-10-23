@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="460" viewBox="0 0 1000 460" role="img" aria-labelledby="title desc">
+  <title id="title">미래 확장 예시: 주소, 운영 서버, 저장소와 AI 작업자</title>
+  <desc id="desc">여러 기기가 도메인과 HTTPS로 운영 서버의 API에 연결한다. 정보와 사진 저장소를 나누고 오래 걸리는 AI 작업은 대기열을 통해 작업자가 처리한다. 아직 구현하지 않은 미래 구상이다.</desc>
+  <defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto-start-reverse"><path d="M1 1 8 4.5 1 8Z" fill="#426878"/></marker></defs>
+  <rect width="1000" height="460" rx="20" fill="#f6f9fc"/>
+  <g font-family="Malgun Gothic, sans-serif" fill="#193142">
+    <text x="30" y="43" font-size="26" font-weight="bold">앞으로의 확장 지도</text>
+    <text x="652" y="43" font-size="19" fill="#7c5816">미래 구상 · 아직 구현 전</text>
+    <g stroke-width="2">
+      <rect x="30" y="114" width="160" height="178" rx="16" fill="#e4f2fa" stroke="#a1becf"/>
+      <rect x="245" y="114" width="198" height="178" rx="16" fill="#fff5da" stroke="#ccb678"/>
+      <rect x="501" y="114" width="205" height="178" rx="16" fill="#e5f3eb" stroke="#8eb6a1"/>
+      <rect x="766" y="102" width="203" height="91" rx="16" fill="white" stroke="#a1becf"/>
+      <rect x="766" y="218" width="203" height="91" rx="16" fill="white" stroke="#a1becf"/>
+      <rect x="501" y="351" width="205" height="77" rx="16" fill="#f0eafd" stroke="#af9ec7"/>
+      <rect x="766" y="351" width="203" height="77" rx="16" fill="#f0eafd" stroke="#af9ec7"/>
+    </g>
+    <g font-size="22" font-weight="bold">
+      <text x="53" y="164">여러 기기</text><text x="271" y="164">도메인 주소</text><text x="523" y="164">운영 서버</text>
+      <text x="790" y="139">데이터베이스</text><text x="790" y="255">사진 저장소</text>
+      <text x="522" y="384">AI 작업 대기열</text><text x="787" y="384">별도 작업자</text>
+    </g>
+    <g font-size="18">
+      <text x="53" y="204">휴대폰 · PC</text><text x="53" y="240">브라우저</text>
+      <text x="267" y="204">DNS로 주소 찾기</text><text x="267" y="240">HTTPS로 보호</text>
+      <text x="523" y="204">API · 권한 확인</text><text x="523" y="240">추천 등 공통 계산</text>
+      <text x="790" y="174">옷 정보 · 예약 · 계정</text><text x="790" y="290">원본 · 생성 이미지</text>
+      <text x="522" y="411">접수 번호 · 상태 확인</text><text x="787" y="411">외부 AI 요청 · 저장</text>
+      <text x="35" y="370" fill="#4f6572">도메인은 이름표예요.</text><text x="35" y="400" fill="#4f6572">실제 일을 할 서버도 필요해요!</text>
+    </g>
+    <g stroke="#426878" stroke-width="3" fill="none" marker-end="url(#arrow)">
+      <path d="M196 202H235"/><path d="M449 202H491"/>
+      <path d="M712 174H740V148H756"/><path d="M712 235H740V261H756"/>
+      <path d="M603 298V341"/><path d="M712 390H756"/>
+    </g>
+  </g>
+</svg>

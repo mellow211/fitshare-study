@@ -36,4 +36,10 @@ export async function signup(username, password, name, teacherCode = '') {
 }
 export async function login(username, password) { return remember((await call('login', { username, password })).user); }
 export async function authAction(action, payload) { return call(action, payload); }
+export async function changeOwnPassword(currentPassword, newPassword) {
+  const result = await call('change-password', { currentPassword, newPassword });
+  remember(null);
+  window.dispatchEvent(new Event('fitshare:auth-changed'));
+  return result;
+}
 export async function logout() { try { await call('logout', {}); } finally { remember(null); } }

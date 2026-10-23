@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="FitShare의 브라우저, Python 서버, 파일 저장소와 외부 AI가 하는 일을 그림으로 배워요.">
+  <title>FitShare 서버는 어떻게 일할까요?</title>
+  <link rel="stylesheet" href="css/server-explained.css">
+</head>
+<body>
+  <main class="guide">
+    <header class="top"><a href="index.html">← 탐구 주제 고르기</a><span>네 번째 탐구 · 서버의 비밀</span></header>
+    <section class="intro" aria-labelledby="title">
+      <p class="eyebrow">옷 사진 한 장은 어디로 여행할까요?</p>
+      <h1 id="title">FitShare 서버는<br>어떻게 일할까요?</h1>
+      <p class="lead">화면은 <strong>안내 데스크</strong>, 서버는 <strong>일하는 작업실</strong>, 저장소는 <strong>기록 보관함</strong>이라고 생각해 봐요.</p>
+      <p>버튼을 누르면 누가 계산하고, 사진은 어디에 남을까요? 지금 만든 구조와 앞으로 만들 구조를 나누어 알아봐요.</p>
+      <nav class="jump" aria-label="설명 바로가기">
+        <a href="#now">지금의 구조</a><a href="#journey">사진의 여행</a><a href="#languages">언어와 도구</a><a href="#future">앞으로의 확장</a><a href="#quiz">스스로 설명하기</a>
+      </nav>
+    </section>
+
+    <section id="now" aria-labelledby="now-title">
+      <p class="eyebrow">1 · 지금의 구조</p>
+      <h2 id="now-title">한 팀이지만, 서로 다른 일을 해요</h2>
+      <figure>
+        <img src="assets/server-now.svg" width="1000" height="640" alt="브라우저가 Python 서버에 요청하면 서버 PC에서 실측을 계산하고 사진과 JSON 파일을 저장해요. AI 상품 사진은 외부 Replicate의 Qwen에 요청하고 결과를 서버 PC에 저장해요.">
+        <figcaption>직접 제작한 개념도예요. 실제 사진·계정·비밀번호가 들어 있지 않아요. 화살표는 요청과 결과의 이동을 나타내요. <a href="assets/server-now.svg">그림 크게 보기</a></figcaption>
+      </figure>
+      <div class="cards">
+        <article><span class="tag blue">내 기기</span><h3>브라우저 · 안내 데스크</h3><p>HTML로 글과 버튼을 놓고, CSS로 꾸미고, JavaScript로 움직여요. 입력 확인, 추천 점수 계산, 가상 입어보기의 몸 위치 찾기와 옷 표시처럼 <strong>브라우저 안에서 하는 계산도 있어요.</strong></p></article>
+        <article><span class="tag green">서버를 켠 PC</span><h3>Python · 작업실</h3><p>요청을 받고 로그인·권한을 확인해요. 사진의 기울기를 보정하고 옷을 분리해 실측을 계산해요. 등록 정보와 사진을 읽고 저장하는 일도 맡아요.</p></article>
+        <article><span class="tag gold">외부 서비스</span><h3>Qwen · AI 사진 작업실</h3><p>AI 상품 사진은 서버가 Replicate의 Qwen Image Edit Plus에 요청해요. 입력 이미지는 외부 서비스로 보내지고, 생성 결과는 서버가 내려받아요. <strong>이 단계에는 인터넷과 비용이 필요할 수 있어요.</strong></p></article>
+      </div>
+      <aside class="note"><h3>지금 읽는 사이트와 실제 앱은 달라요</h3><p><strong>GitHub Pages는 설명 전시관</strong>이에요. HTML·CSS·JavaScript·그림을 보여 주지만 여기서 Python 서버를 실행하지는 않아요. 실제 등록·로그인·저장 API는 Python 서버를 실행한 앱에서 사용해요. 설명 사이트를 공개했다고 앱 서버까지 인터넷에 공개되는 것은 아니에요.</p></aside>
+    </section>
+
+    <section id="journey" aria-labelledby="journey-title">
+      <p class="eyebrow">2 · 요청 → 계산 → 저장 → 응답</p>
+      <h2 id="journey-title">옷 사진 한 장의 여행을 따라가요</h2>
+      <ol class="steps">
+        <li><h3>사진을 고르고 “분석해 줘!”</h3><p>브라우저가 사진과 배경 종류를 서버의 <code>POST /api/garments/analyze</code>로 보내요. POST는 “이 자료로 일을 해 줘”에 가까워요.</p></li>
+        <li><h3>서버 PC가 옷의 크기를 계산해요</h3><p>OpenCV 등으로 배경 표식을 읽고 기울기를 보정해요. 실측용 옷 영역은 너비에 GrabCut, 기장에 YOLO→GrabCut을 써요. 알려진 배경 길이와 사진 속 픽셀 길이를 비교해 cm를 계산해 돌려줘요.</p></li>
+        <li><h3>사람이 확인한 다음 등록해요</h3><p>학생이 옷 종류와 치수를 고친 뒤 저장을 눌러요. <code>POST /api/garments</code> 요청을 받은 서버가 사진과 옷 정보를 파일로 남겨요. 자동 계산을 무조건 정답으로 여기지 않아요.</p></li>
+        <li><h3>등록 다음에 AI 사진을 요청해요</h3><p>등록 화면이 <code>POST /api/garments/{id}/product-photo</code>를 요청해요. 서버 PC의 <strong>YOLO→SAM</strong>으로 상품 사진용 옷을 오려낸 뒤 외부 Qwen에 보내요. 실측용 분할과는 다른 절차예요. 완료 안내까지 화면을 열어 둬요. 실패해도 등록된 옷과 실측값은 남아요.</p></li>
+        <li><h3>목록을 다시 읽어 보여 줘요</h3><p><code>GET /api/garments</code>는 “저장된 옷 목록을 보여 줘”라는 요청이에요. 서버는 JSON으로 정보를 답하고, 브라우저가 카드로 꾸며요. 선생님은 권한 확인 후 AI 사진을 다시 만들 수 있어요.</p></li>
+      </ol>
+      <div class="analogy"><h3>API는 “약속된 주문 창구”예요</h3><p>식당에서 메뉴 이름과 주문 방법을 맞추듯, 컴퓨터끼리도 <strong>주소·보낼 자료·돌려줄 결과</strong>를 약속해요. 그 창구가 API예요. <strong>FitShare에는 이미 API가 있어요.</strong> 앞으로 처음 만드는 것이 아니라, 맡길 일을 더 늘리는 거예요.</p><p>JSON은 <code>{"name": "티셔츠", "widthCm": 32}</code>처럼 이름표와 값을 짝지은 메모예요. 위 예시는 설명용이며 실제 응답에는 다른 정보도 있어요.</p></div>
+    </section>
+
+    <section id="storage" aria-labelledby="storage-title">
+      <p class="eyebrow">3 · 보관함은 어디에 있을까요?</p>
+      <h2 id="storage-title">등록 사진은 서버를 켠 PC에 남아요</h2>
+      <p>기본 보관함은 프로젝트 안의 <code>server-data/</code>예요. 실행 설정으로 위치를 바꿀 수도 있어요. 지금은 이 앱의 주요 데이터를 데이터베이스 대신 <strong>폴더와 JSON 파일</strong>로 관리해요.</p>
+      <div class="storage-grid">
+        <article><h3>옷 보관함</h3><p><code>server-data/garments/</code></p><p>옷마다 폴더가 있고 등록 사진, 분리한 옷 사진, AI 상품 사진, <code>garment.json</code> 정보가 들어가요. <code>index.json</code>은 목록을 찾는 목차예요.</p></article>
+        <article><h3>실험 기록장</h3><p><code>server-data/experiments/</code></p><p>실험 회차별로 사진과 측정 기록을 보관해요. 페이지를 새로 열어도 서버 파일에서 다시 읽을 수 있어요.</p></article>
+        <article><h3>계정과 내 기기의 메모</h3><p>계정·로그인 정보는 서버 쪽에서 관리해요. 일부 화면 설정과 임시 상태는 브라우저에도 남을 수 있어요. <strong>브라우저 저장과 서버 저장은 서로 달라요.</strong></p></article>
+      </div>
+      <aside class="note"><h3>“저장됨”은 “영원히 안전함”이 아니에요</h3><p>서버 프로그램을 꺼도 파일은 보통 남지만, 디스크가 고장 나거나 파일을 지우면 잃을 수 있어요. 백업이 필요해요. 내 휴대폰의 <code>localhost</code>는 내 휴대폰을 뜻하지 선생님 PC가 아니에요. 다른 기기로 접속하려면 연결 가능한 서버 주소와 네트워크 설정이 필요해요.</p></aside>
+      <p class="privacy">가상 입어보기의 카메라 영상은 현재 브라우저에서 처리하고 서버로 보내거나 저장하지 않아요. 등록하려고 보내는 옷 사진과는 구분해요.</p>
+    </section>
+
+    <section id="languages" aria-labelledby="languages-title">
+      <p class="eyebrow">4 · 언어, 프레임워크, 라이브러리</p>
+      <h2 id="languages-title">설명서와 공구 상자를 구분해 봐요</h2>
+      <dl class="glossary">
+        <div><dt>언어 = 일을 적는 말</dt><dd><strong>HTML</strong>은 화면의 뼈대, <strong>CSS</strong>는 꾸미기, <strong>JavaScript</strong>는 브라우저 동작, <strong>Python</strong>은 서버 작업을 담당해요.</dd></div>
+        <div><dt>프레임워크 = 큰 조립 틀</dt><dd>현재 화면은 별도 프레임워크 없이 Vanilla JavaScript와 ES Module을 써요. 웹 서버도 <strong>Flask·Django를 쓰지 않고</strong> Python 표준 라이브러리의 <code>http.server</code>, <code>ThreadingHTTPServer</code>, <code>SimpleHTTPRequestHandler</code>로 만들었어요.</dd></div>
+        <div><dt>라이브러리·모델 = 도와주는 도구</dt><dd>웹 요청 창구는 표준 라이브러리로 만들었지만, 영상 계산은 <strong>OpenCV</strong> 같은 별도 라이브러리와 <strong>YOLO·SAM</strong> 같은 AI 모델의 도움을 받아요. 브라우저의 몸 위치 찾기에는 <strong>MediaPipe</strong>를 써요. “모든 계산을 Python 기본 기능만으로 한다”는 뜻은 아니에요.</dd></div>
+        <div><dt>아키텍처 = 역할과 연결의 설계도</dt><dd>누가 화면을 그리고, 누가 계산하고, 어디에 저장하며, 어떤 약속으로 대화하는지 정한 전체 그림이에요. 어려운 말이지만 오늘 본 작업실 지도와 같아요.</dd></div>
+      </dl>
+      <details><summary>실제 코드에서는 어디를 보면 될까요?</summary><ul>
+        <li><code>server.py</code>: 웹 파일 제공, API 주소 연결, 로그인·권한 확인, 저장 요청 처리</li>
+        <li><code>tools/vision_pipeline.py</code>: 사진 보정과 실측 계산</li>
+        <li><code>tools/garment_segmentation.py</code>: 상품 사진용 YOLO·SAM 분리</li>
+        <li><code>tools/replicate_product_photo.py</code>: 외부 Qwen 상품 사진 생성 요청</li>
+        <li><code>modules/recommendation.js</code>: 브라우저의 추천 계산</li>
+        <li><code>js/virtualTryOn/</code>: 브라우저의 카메라·몸 위치·옷 표시</li>
+      </ul><p>이 페이지의 파일명은 코드 지도를 위한 설명이에요. 공개 사이트에서 계정 파일이나 실제 저장 사진을 열도록 연결하지 않아요.</p></details>
+    </section>
+
+    <section id="future" aria-labelledby="future-title">
+      <p class="eyebrow">5 · 앞으로 만들 모습 · 아직 구현된 것은 아니에요</p>
+      <h2 id="future-title">우리 PC의 작업실을 더 큰 서비스로!</h2>
+      <figure><img src="assets/server-future.svg" width="1000" height="460" loading="lazy" alt="미래에는 기억하기 쉬운 도메인과 HTTPS로 접속하고 운영 서버의 API가 계산을 맡아요. 데이터베이스와 사진 저장소를 나누고 오래 걸리는 AI 작업은 대기열과 작업자가 처리하도록 확장할 수 있어요."><figcaption>앞으로의 확장 예시예요. 도메인·운영 서버·데이터베이스·작업 대기열을 이미 마련했다는 뜻은 아니에요. <a href="assets/server-future.svg">그림 크게 보기</a></figcaption></figure>
+      <ol class="steps future">
+        <li><h3>기억하기 쉬운 주소와 안전한 연결</h3><p>도메인은 <code>fitshare.example</code>처럼 기억하기 쉬운 주소 이름이에요. 이 주소는 설명용 예시예요. DNS는 이름에 맞는 서버 주소를 찾아줘요. <strong>도메인만 산다고 서버가 생기지는 않아요.</strong> 늘 켜 둘 운영 서버와 연결하고 HTTPS로 오가는 자료를 보호해야 해요.</p></li>
+        <li><h3>필요한 로직을 서버 API로 더 옮기기</h3><p>현재 브라우저에서 하는 추천 점수 계산 등을 서버 API로 옮기면 여러 기기에 같은 규칙을 적용하기 쉬워요. 저장·권한에 중요한 판단은 서버가 확인해야 해요. 다만 카메라 영상처럼 개인정보와 반응 속도가 중요한 일은 계속 브라우저에 둘 수 있어요. <strong>모든 계산을 무조건 서버로 옮기지는 않아요.</strong></p></li>
+        <li><h3>많은 사람의 기록을 안전하게 보관하기</h3><p>옷 정보·예약·계정은 데이터베이스로, 사진은 전용 파일 저장소로 나누는 방법을 검토해요. 동시에 수정해도 기록이 엉키지 않게 하고 백업·복구도 준비해요. 사용자가 늘면 서버 역할을 나눌 수 있어요.</p></li>
+        <li><h3>오래 걸리는 AI 작업에는 대기표 주기</h3><p>“요청을 받았어요”라는 작업 번호를 먼저 주고, 별도 작업자가 처리하게 할 수 있어요. 화면은 진행 상태를 다시 물어봐요. 실패·재시도·비용 제한을 관리하고, API 비밀키는 브라우저에 넣지 않아요.</p></li>
+      </ol>
+      <aside class="note"><h3>지금은 배우는 서버, 다음은 운영 준비</h3><p>지금 구조는 로컬 실험과 학습을 위한 출발점이에요. 인터넷 공개 전에는 HTTPS, 접근 권한, 비밀정보 보호, 요청 제한, 백업, 오류 기록 등을 점검해야 해요. Python 기본 웹 서버에 도메인만 붙이는 것으로 운영 준비가 끝나지는 않아요.</p></aside>
+    </section>
+
+    <section id="quiz" aria-labelledby="quiz-title">
+      <p class="eyebrow">6 · 내 말로 설명해 봐요</p>
+      <h2 id="quiz-title">작업실 안내원이 되어 볼까요?</h2>
+      <details><summary>페이지를 새로고침하면 서버에 등록한 옷 사진도 사라질까요?</summary><p>아니요. 정상 저장됐다면 서버 PC의 파일로 남아 있어 다시 읽어요. 단, 삭제·디스크 고장에 대비한 백업은 따로 필요해요.</p></details>
+      <details><summary>도메인을 만들면 내 PC가 꺼져도 앱이 작동할까요?</summary><p>도메인은 주소 이름일 뿐이에요. 실제 일을 할 서버가 켜져 있고 연결 가능해야 해요. PC를 대신할 운영 서버를 준비해야 계속 서비스할 수 있어요.</p></details>
+      <details><summary>API는 앞으로 처음 만들어야 하나요?</summary><p>이미 옷 등록·조회·실측 등의 API가 있어요. 앞으로는 필요한 로직을 더 옮기고, 더 많은 사람도 안전하게 쓰도록 확장하는 거예요.</p></details>
+      <p class="takeaway">한 문장 정리: <strong>브라우저가 부탁하고, 서버가 계산·보관하며, 필요한 AI는 외부에 요청해요.</strong></p>
+    </section>
+    <footer><a href="index.html">← 다른 탐구 주제 보기</a><p>2026년 10월 18일 코드 기준 · 설명 페이지는 계정·카메라·유료 AI를 호출하지 않아요.</p></footer>
+  </main>
+</body>
+</html>

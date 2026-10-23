@@ -100,6 +100,36 @@ class AccountRoleTests(unittest.TestCase):
         self.assertIsNone(self.store.user_for_token(token))
         self.assertEqual(self.store.login('student', 'pw')['role'], 'student')
 
+    def test_student_and_teacher_can_change_own_password_after_verifying_old_password(self):
+        self.store.signup('student', 'student-old', 'Student')
+        self.store.signup('teacher', 'teacher-old', 'Teacher', teacher_code='fitshare')
+        tokens = {username: self.store.create_session(username) for username in ('student', 'teacher')}
+
+        self.store.change_own_password('student', 'student-old', 'student-new')
+        self.store.change_own_password('teacher', 'teacher-old', 'teacher-new')
+
+        for username, role, new_password, old_password in (
+            ('student', 'student', 'student-new', 'student-old'),
+            ('teacher', 'teacher', 'teacher-new', 'teacher-old'),
+        ):
+            self.assertIsNone(self.store.user_for_token(tokens[username]))
+            with self.assertRaises(AuthError):
+                self.store.login(username, old_password)
+            self.assertEqual(self.store.login(username, new_password)['role'], role)
+
+    def test_own_password_change_rejects_wrong_current_and_invalid_new_password(self):
+        self.store.signup('student', 'correct-old', 'Student')
+        token = self.store.create_session('student')
+
+        with self.assertRaisesRegex(AuthError, '현재 비밀번호'):
+            self.store.change_own_password('student', 'wrong-old', 'new-password')
+        for password in (' ', 'x' * 201):
+            with self.assertRaises(AuthError):
+                self.store.change_own_password('student', 'correct-old', password)
+
+        self.assertIsNotNone(self.store.user_for_token(token))
+        self.assertEqual(self.store.login('student', 'correct-old')['role'], 'student')
+
 
 if __name__ == '__main__':
     unittest.main()

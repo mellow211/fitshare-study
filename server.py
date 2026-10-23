@@ -522,6 +522,13 @@ def create_handler_class(data_dir=DEFAULT_DATA_DIR):
                         return self.send_json(401, {'error': '로그인해 주세요.'})
                     accounts.reset_student_password(user['username'], payload.get('username'), payload.get('newPassword'))
                     return self.send_json(200, {'ok': True})
+                if action == 'change-password':
+                    user = self.current_user()
+                    if user is None:
+                        return self.send_json(401, {'error': '로그인해 주세요.'})
+                    accounts.change_own_password(user['username'], payload.get('currentPassword'),
+                                                 payload.get('newPassword'))
+                    return self.send_json(200, {'ok': True}, {'Set-Cookie': self.cookie_header('', 0)})
             except AuthError as error:
                 return self.send_json(error.status, {'error': str(error)})
             return self.send_json(404, {'error': '찾는 API 주소가 없어요.'})

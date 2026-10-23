@@ -4,7 +4,7 @@ import {
   getProfile, sanitizeAvatar, setAvatar
 } from './rankingLogic.js';
 import { loadState, loadViewerName, mutateState, pullState, subscribe } from './rankingStore.js';
-import { authAction, getUser } from '../js/auth.js?v=auth-2';
+import { authAction, changeOwnPassword, getUser } from '../js/auth.js?v=auth-3';
 import { createMySharing, reviewsHtml } from './mySharing.js';
 
 const CSS_ID = 'ranking-style';
@@ -129,6 +129,7 @@ export function openProfileDialog(onSaved) {
       <div class="garment-detail-buttons"><button type="button" class="rk-ghost" data-reset>되돌리기</button><button type="button" class="primary-action" data-save>아바타 저장</button></div>
     </details>
     <section class="mypage-section rk-box" data-account-settings><h3>계정 설정</h3><p class="rk-label">${escapeHtml(name)}${account?.username ? ` · 아이디 ${escapeHtml(account.username)}` : ''}</p>
+      <section class="teacher-profile-controls"><h3 class="profile-sub">내 비밀번호</h3><form data-account-action="change-own-password"><label>현재 비밀번호<input name="currentPassword" type="password" maxlength="200" autocomplete="current-password" required></label><label>새 비밀번호<input name="newPassword" type="password" maxlength="200" autocomplete="new-password" required></label><label>새 비밀번호 다시 입력<input name="confirmPassword" type="password" maxlength="200" autocomplete="new-password" required></label><button class="primary-action" type="submit">내 비밀번호 바꾸기</button></form></section>
       ${teacher ? `<section class="teacher-profile-controls"><h3 class="profile-sub">선생님 설정</h3><form data-account-action="teacher-code"><label>새 선생님 인증 코드<input name="newCode" type="password" maxlength="200" autocomplete="new-password" required></label><button class="primary-action" type="submit">인증 코드 바꾸기</button></form><form data-account-action="reset-student-password"><label>학생 아이디<input name="username" maxlength="200" required></label><label>새 비밀번호<input name="newPassword" type="password" maxlength="200" autocomplete="new-password" required></label><button class="primary-action" type="submit">학생 비밀번호 바꾸기</button></form></section>` : '<p class="rk-empty">계정 이름으로 내 나눔 기록을 확인할 수 있어요.</p>'}
       <p id="pf-account-message" class="garment-detail-message" role="status" aria-live="polite"></p>
     </section>
@@ -198,12 +199,24 @@ export function openProfileDialog(onSaved) {
     const form = event.target.closest('[data-account-action]');
     if (!form) return;
     event.preventDefault();
-    if (!alive() || getUser()?.role !== 'teacher') return;
+    if (!alive()) return;
+    const ownPasswordChange = form.dataset.accountAction === 'change-own-password';
+    if (!ownPasswordChange && getUser()?.role !== 'teacher') return;
     const button = form.querySelector('button[type="submit"]');
     if (button.disabled) return;
+    const values = Object.fromEntries(new FormData(form));
+    if (ownPasswordChange && values.newPassword !== values.confirmPassword) {
+      message('#pf-account-message','새 비밀번호가 서로 달라요. 다시 확인해 주세요.',true);
+      return;
+    }
     button.disabled = true; message('#pf-account-message','저장하고 있어요.');
     try {
-      await authAction(form.dataset.accountAction,Object.fromEntries(new FormData(form)));
+      if (ownPasswordChange) {
+        await changeOwnPassword(values.currentPassword,values.newPassword);
+        dialog.close();
+        return;
+      }
+      await authAction(form.dataset.accountAction,values);
       if (!alive()) return;
       form.reset();
       message('#pf-account-message',form.dataset.accountAction === 'teacher-code' ? '새 인증 코드로 바꿨어요.' : '학생 비밀번호를 바꿨어요. 이전 로그인은 모두 종료됐어요.');

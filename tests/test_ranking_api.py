@@ -210,6 +210,36 @@ class RankingApiTests(unittest.TestCase):
                                                              'teacherCode': 'changed'})
         self.assertEqual((status, new_teacher['user']['role']), (201, 'teacher'))
 
+    def test_own_password_change_requires_current_password_and_expires_session(self):
+        self.login('student', 'Student')
+        self.assertEqual(self.call('/api/auth/change-password', {'currentPassword': 'wrong',
+                                                                  'newPassword': 'new-secret'})[0], 401)
+        self.assertIsNotNone(self.call('/api/auth/me')[1]['user'])
+
+        self.assertEqual(self.call('/api/auth/change-password', {'currentPassword': 'secret1',
+                                                                  'newPassword': 'new-secret'}),
+                         (200, {'ok': True}))
+        self.assertIsNone(self.call('/api/auth/me')[1]['user'])
+        self.assertEqual(self.call('/api/auth/login', {'username': 'student', 'password': 'secret1'})[0], 401)
+        self.assertEqual(self.call('/api/auth/login', {'username': 'student', 'password': 'new-secret'})[0], 200)
+
+    def test_own_password_change_requires_login_and_rejects_invalid_new_password(self):
+        self.assertEqual(self.call('/api/auth/change-password', {'currentPassword': 'old',
+                                                                  'newPassword': 'new'})[0], 401)
+        self.login('student', 'Student')
+        for password in (' ', 'x' * 201):
+            self.assertEqual(self.call('/api/auth/change-password', {'currentPassword': 'secret1',
+                                                                      'newPassword': password})[0], 400)
+
+    def test_teacher_can_change_own_password(self):
+        status, result = self.call('/api/auth/signup', {'username': 'teacher', 'password': 'teacher-old',
+                                                        'name': 'Teacher', 'teacherCode': 'fitshare'})
+        self.assertEqual((status, result['user']['role']), (201, 'teacher'))
+        self.assertEqual(self.call('/api/auth/change-password', {'currentPassword': 'teacher-old',
+                                                                  'newPassword': 'teacher-new'}),
+                         (200, {'ok': True}))
+        self.assertEqual(self.call('/api/auth/login', {'username': 'teacher', 'password': 'teacher-new'})[0], 200)
+
     def add_saved_garment(self):
         garment_id = 'a4831e58-d3d0-4e96-a7c8-b12734037a6c'
         root = Path(self.temp_dir.name) / 'garments'

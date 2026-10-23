@@ -22,6 +22,16 @@ class TeacherUiTests(unittest.TestCase):
         self.assertIn('data-account-action="reset-student-password"', profile)
         self.assertIn('${teacher ?', profile)
 
+    def test_profile_offers_own_password_change_for_both_roles(self):
+        profile = (ROOT / 'modules/profile.js').read_text(encoding='utf-8')
+        auth = (ROOT / 'js/auth.js').read_text(encoding='utf-8')
+        app = (ROOT / 'js/app.js').read_text(encoding='utf-8')
+        self.assertIn('data-account-action="change-own-password"', profile)
+        self.assertIn('name="currentPassword"', profile)
+        self.assertIn('name="newPassword"', profile)
+        self.assertIn('changeOwnPassword', auth)
+        self.assertIn('fitshare:auth-changed', app)
+
     def test_product_photo_generation_shows_accessible_indeterminate_progress(self):
         detail = (ROOT / 'modules/garmentDetail.js').read_text(encoding='utf-8')
         style = (ROOT / 'css/ranking.css').read_text(encoding='utf-8')

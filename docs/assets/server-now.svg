@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="640" viewBox="0 0 1000 640" role="img" aria-labelledby="title desc">
+  <title id="title">지금의 FitShare: 브라우저, 서버 PC, 외부 AI</title>
+  <desc id="desc">브라우저가 서버에 요청하고 결과를 받는다. 서버 PC는 계산하고 파일로 저장한다. 상품 사진 생성만 외부 Qwen에 요청한다.</desc>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse"><path d="M1 1 9 5 1 9Z" fill="#426878"/></marker></defs>
+  <rect width="1000" height="640" rx="20" fill="#f2f8fb"/>
+  <g font-family="Malgun Gothic, sans-serif" fill="#193142">
+    <text x="40" y="48" font-size="27" font-weight="bold">지금은 이렇게 함께 일해요</text>
+    <rect x="360" y="90" width="600" height="510" rx="24" fill="#e5f3ed" stroke="#8fbdac" stroke-width="2"/>
+    <text x="390" y="128" font-size="24" font-weight="bold">서버를 켠 PC</text>
+    <rect x="40" y="168" width="240" height="300" rx="20" fill="white" stroke="#9bbdd3" stroke-width="2"/>
+    <rect x="91" y="198" width="136" height="80" rx="8" fill="#d8ecf7" stroke="#155f84" stroke-width="4"/>
+    <path d="M160 278v20m-38 0h76" stroke="#155f84" stroke-width="5"/>
+    <text x="67" y="337" font-size="24" font-weight="bold">브라우저</text>
+    <text x="67" y="373" font-size="19">화면 · 입력 · 추천</text>
+    <text x="67" y="406" font-size="19">카메라의 몸 위치</text>
+    <text x="67" y="439" font-size="19">옷을 화면에 겹치기</text>
+    <rect x="400" y="180" width="230" height="240" rx="18" fill="white" stroke="#77a995" stroke-width="2"/>
+    <text x="424" y="228" font-size="24" font-weight="bold">Python 서버</text>
+    <text x="424" y="272" font-size="19">API 요청 창구</text>
+    <text x="424" y="308" font-size="19">로그인 · 권한 확인</text>
+    <text x="424" y="344" font-size="19">실측 · 사진 분리</text>
+    <text x="424" y="380" font-size="19">파일 읽기 · 저장</text>
+    <path d="M285 261H391" stroke="#426878" stroke-width="3" marker-end="url(#arrow)"/>
+    <text x="295" y="245" font-size="17">요청 →</text>
+    <path d="M392 365H286" stroke="#426878" stroke-width="3" marker-end="url(#arrow)"/>
+    <text x="297" y="397" font-size="17">← 결과</text>
+    <rect x="695" y="180" width="225" height="240" rx="18" fill="#fff9e9" stroke="#cfb56f" stroke-width="2"/>
+    <path d="M721 212h62l12 14h95v30H721Z" fill="#eed184"/>
+    <text x="718" y="294" font-size="24" font-weight="bold">파일 보관함</text>
+    <text x="718" y="330" font-size="19">server-data/</text>
+    <text x="718" y="363" font-size="19">사진 · 옷 정보</text>
+    <text x="718" y="396" font-size="19">실험 기록 · 계정</text>
+    <path d="M638 300H685" stroke="#426878" stroke-width="3" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+    <rect x="401" y="481" width="517" height="84" rx="14" fill="white"/>
+    <text x="422" y="516" font-size="20" font-weight="bold">상품 사진 준비: YOLO → SAM</text>
+    <text x="422" y="546" font-size="18">실측용 분할과 구분해요 · 결과는 PC에 저장해요</text>
+    <rect x="40" y="505" width="250" height="95" rx="18" fill="#fff0d5" stroke="#cba45a" stroke-width="2"/>
+    <text x="58" y="537" font-size="20" font-weight="bold">외부 AI · 인터넷 필요</text>
+    <text x="58" y="566" font-size="18">Replicate의 Qwen</text>
+    <text x="58" y="590" font-size="16">상품 사진 생성 · 비용 가능</text>
+    <path d="M297 549H391" stroke="#426878" stroke-width="3" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+    <text x="305" y="529" font-size="16">이미지</text>
+  </g>
+</svg>

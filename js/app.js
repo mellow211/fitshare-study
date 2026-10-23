@@ -2,8 +2,8 @@
 import { renderMeasurement } from '../modules/measurement.js?v=garment-registration-1';
 import { renderRecommendation } from '../modules/recommendation.js';
 import { renderRanking } from '../modules/ranking.js?v=ranking-9';
-import { fetchMe, getUser, login, logout, signup } from './auth.js?v=auth-2';
-import { openProfileDialog } from '../modules/profile.js?v=profile-3';
+import { fetchMe, getUser, login, logout, signup } from './auth.js?v=auth-3';
+import { openProfileDialog } from '../modules/profile.js?v=profile-4';
 import { createSchoolEntryResult } from './schoolEntry.js';
 import { createGarmentCloset } from './measurement/garmentCloset.js?v=closet-tools-6';
 import { openGarmentDetail } from '../modules/garmentDetail.js?v=detail-6';
@@ -132,6 +132,13 @@ document.querySelector('#logout-button').addEventListener('click', async () => {
   await logout();
   schoolCloset.hidden = true;
   document.querySelector('.app-shell').classList.remove('is-entered');
+  showApp();
+});
+window.addEventListener('fitshare:auth-changed', () => {
+  schoolCloset.hidden = true;
+  document.querySelector('.app-shell').classList.remove('is-entered');
+  authMessage.classList.remove('is-error');
+  authMessage.textContent = '비밀번호가 바뀌었어요. 새 비밀번호로 다시 로그인해 주세요.';
   showApp();
 });
 

@@ -58,6 +58,10 @@ window.fetch = async (input, options = {}) => {
     if (body.baseRev !== revision) return json({ rev: revision, state: clone(serverState) }, 409);
     serverState = clone(body.state); revision += 1; return json({ rev: revision });
   }
+  if (path === '/api/auth/change-password' && method === 'POST') {
+    if (!signedIn) return json({ error: '로그인해 주세요.' }, 401);
+    return accountFailure ? json({ error: '모의 설정 오류예요. 다시 시도해 주세요.' }, 500) : json({ ok: true });
+  }
   if (['/api/auth/teacher-code', '/api/auth/reset-student-password'].includes(path) && method === 'POST') {
     if (signedIn?.role !== 'teacher') return json({ error: '선생님만 사용할 수 있어요.' }, 403);
     return accountFailure ? json({ error: '모의 설정 오류예요. 다시 시도해 주세요.' }, 500) : json({ ok: true });
@@ -152,7 +156,7 @@ const jacket = { id: 'isolated-ranking-jacket', name: '파란 점퍼', garmentTy
 
 try {
   [{ fetchMe }, { renderRanking }, { openGarmentDetail }, { openProfileDialog, openMemberProfileDialog }] = await Promise.all([
-    import('../js/auth.js?v=auth-2'), import('../modules/ranking.js'), import('../modules/garmentDetail.js'), import('../modules/profile.js?v=profile-3')
+    import('../js/auth.js?v=auth-3'), import('../modules/ranking.js'), import('../modules/garmentDetail.js'), import('../modules/profile.js?v=profile-4')
   ]);
   await check('빈 참여 랭킹은 공개 비교만 보여 주고 계정·서버 기록을 만들지 않아요', async () => {
     await showRanking(null);
@@ -167,7 +171,8 @@ try {
     $('#rk-open-mypage').click();
     await waitFor(() => myDialog()?.querySelector('#rk-account'), '내 페이지가 열리지 않았어요.');
     assert(myDialog().textContent.includes('민수') && myDialog().querySelector('#rk-reservations'), '계정과 예약이 내 페이지에 있어야 해요.');
-    assert(!myDialog().querySelector('[data-account-action]'), '학생에게 선생님 설정이 보여요.');
+    assert(myDialog().querySelector('[data-account-action="change-own-password"]'), '학생 본인 비밀번호 변경이 보여야 해요.');
+    assert(!myDialog().querySelector('[data-account-action="teacher-code"],[data-account-action="reset-student-password"]'), '학생에게 선생님 설정이 보여요.');
     await closeAllDialogs();
   });
   await check('옷 상세에서 예약하면 예약 중으로 바뀌고 중복 예약을 막아요', async () => {
@@ -290,6 +295,19 @@ try {
   });
   await check('선생님 설정은 내 페이지에서 성공·실패를 안내하고 학생에게는 숨겨요', async () => {
     let dialog = myDialog();
+    const ownPasswordForm = dialog.querySelector('[data-account-action="change-own-password"]');
+    assert(ownPasswordForm, '선생님 본인 비밀번호 변경이 보여야 해요.');
+    ownPasswordForm.elements.currentPassword.value = 'isolated-current';
+    ownPasswordForm.elements.newPassword.value = 'isolated-new';
+    ownPasswordForm.elements.confirmPassword.value = 'different';
+    submit(ownPasswordForm);
+    assert(dialog.querySelector('#pf-account-message').classList.contains('is-error'), '새 비밀번호가 다르면 오류를 알려야 해요.');
+    assert(!requests.some(item => item.path === '/api/auth/change-password'), '확인값이 다르면 요청하면 안 돼요.');
+    ownPasswordForm.elements.confirmPassword.value = 'isolated-new';
+    submit(ownPasswordForm);
+    await waitFor(() => !dialog.isConnected, '비밀번호 변경 뒤 프로필을 닫아야 해요.');
+    assert(requests.some(item => item.path === '/api/auth/change-password' && item.body.currentPassword === 'isolated-current' && item.body.newPassword === 'isolated-new'), '본인 비밀번호 요청 값이 잘못됐어요.');
+    dialog = await openMine('지수', 'teacher');
     let form = dialog.querySelector('[data-account-action="teacher-code"]');
     submit(form);
     await waitFor(() => dialog.querySelector('#pf-account-message').textContent.includes('바꿨어요'), '인증 코드 저장 안내가 없어요.');
@@ -302,7 +320,8 @@ try {
     accountFailure = false;
     submit(form); await waitFor(() => dialog.querySelector('#pf-account-message').textContent.includes('바꿨어요'), '설정 재시도가 안 됐어요.');
     dialog = await openMine('민수');
-    assert(!dialog.querySelector('[data-account-action]'), '학생에게 선생님 설정이 남아 있어요.');
+    assert(dialog.querySelector('[data-account-action="change-own-password"]'), '학생 본인 비밀번호 변경이 있어야 해요.');
+    assert(!dialog.querySelector('[data-account-action="teacher-code"],[data-account-action="reset-student-password"]'), '학생에게 선생님 설정이 남아 있어요.');
     assert(!root.querySelector('[data-account-action]'), '설정이 랭킹 탭에 남아 있어요.');
   });
   await check('예약 취소도 내 페이지에서 하고 같은 옷을 다시 예약할 수 있어요', async () => {
@@ -333,7 +352,7 @@ try {
   await check('모든 계정·랭킹·사진 동작은 격리되어 실제 API로 나가지 않아요', async () => {
     assert(unexpected.length === 0, '예상하지 못한 API 요청: ' + JSON.stringify(unexpected));
     assert(window.localStorage === isolatedStorage, '실제 localStorage를 사용했어요.');
-    assert(requests.every(item => ['/api/auth/me','/api/ranking','/api/auth/teacher-code','/api/auth/reset-student-password'].includes(item.path)), '실제 계정이나 재고 API를 불렀어요.');
+    assert(requests.every(item => ['/api/auth/me','/api/ranking','/api/auth/teacher-code','/api/auth/reset-student-password','/api/auth/change-password'].includes(item.path)), '실제 계정이나 재고 API를 불렀어요.');
     assert(!requests.some(item => /signup|login|logout|garments/.test(item.path)), '실제 계정 생성·로그인·재고 요청을 시도했어요.');
   });
 } catch (error) {

@@ -202,6 +202,31 @@ class AccountStore:
             # but every existing session has already been revoked.
             _write(self.accounts_path, accounts)
 
+    def change_own_password(self, username, current_password, new_password):
+        actor = username.strip().lower() if isinstance(username, str) else ''
+        if not isinstance(new_password, str) or not new_password.strip() or len(new_password) > TEXT_MAX:
+            raise AuthError('새 비밀번호를 1~200글자로 입력해 주세요.')
+        if not isinstance(current_password, str) or len(current_password) > TEXT_MAX:
+            raise AuthError('현재 비밀번호가 맞지 않아요.', 401)
+        with self.lock:
+            accounts = _read(self.accounts_path, {})
+            account = accounts.get(actor)
+            if not account:
+                raise AuthError('현재 비밀번호가 맞지 않아요.', 401)
+            current_hash = _hash_password(current_password, bytes.fromhex(account['salt']))
+            if not hmac.compare_digest(current_hash, account['hash']):
+                raise AuthError('현재 비밀번호가 맞지 않아요.', 401)
+
+            salt = secrets.token_bytes(16)
+            account['salt'] = salt.hex()
+            account['hash'] = _hash_password(new_password, salt)
+            accounts[actor] = account
+            sessions = _read(self.sessions_path, {})
+            active = {key: item for key, item in sessions.items() if item.get('username') != actor}
+            if len(active) != len(sessions):
+                _write(self.sessions_path, active)
+            _write(self.accounts_path, accounts)
+
     def destroy_session(self, token):
         if not isinstance(token, str) or not token:
             return
